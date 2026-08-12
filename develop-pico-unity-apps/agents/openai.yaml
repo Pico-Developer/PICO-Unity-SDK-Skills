@@ -1,4 +1,0 @@
-interface:
-  display_name: "PICO Unity App Developer"
-  short_description: "Build XR and spatial apps with PICO Unity SDK"
-  default_prompt: "Use $develop-pico-unity-apps to inspect this Unity project and implement the requested PICO XR or spatial feature."
