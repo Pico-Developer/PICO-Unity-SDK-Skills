@@ -8,13 +8,21 @@
 
 - XR Origin present
 - **VST enabled** (passthrough required by PICO)
+- A PICO runtime enabled in XR Plug-in Management (PICO-native **or** PICO
+  OpenXR — see SKILL.md §3.1). User prerequisite; this skill does not toggle it.
 
 ## Driver
 
 Spatial Mesh rendering is driven by **`SpatialMeshManager.cs`**, a
-`MonoBehaviour` singleton that subscribes to `PXR_Manager.SpatialMeshDataUpdated`
-and builds/pools per-block meshes at runtime (plus an optional convex-hull
-bounds pass). These runtime assets are bundled with — and imported by — the
+`MonoBehaviour` singleton that subscribes to the spatial-mesh data stream and
+builds/pools per-block meshes at runtime (plus an optional convex-hull bounds
+pass). The stream source depends on the runtime: on the **PICO-native** path it
+is `PXR_Loader.meshSubsystem` + `PXR_Manager.SpatialMeshDataUpdated`; on the
+**PICO OpenXR** path (`ENABLE_PICO_OPENXR_SDK`) the driver obtains the
+`XRMeshSubsystem` from `SubsystemManager` (created by the `PICOSpatialMesh`
+OpenXR feature) and subscribes to `OpenXRExtensions.SpatialMeshDataUpdated`. The
+driver branches on the compile define, so the same asset works on both runtimes.
+These runtime assets are bundled with — and imported by — the
 MCP package alone (`Editor/SpatialMeshAssets~` in
 `Unity-MCP-Extensions`); they are **not** carried by this skill. The
 `pico_xr_spatial_mesh(action=enable)` tool copies them into the user project
@@ -120,6 +128,15 @@ Save Scene                              → ok
   manifest; disable clears only that flag. Runtime `SpatialMeshDataUpdated`
   events are dispatched by the shared `PXR_Manager` mounted on the XR Origin
   root by `EnsureXROrigin` (never added/removed by this block).
+- **PICO OpenXR runtime.** On the OpenXR loader (`ENABLE_PICO_OPENXR_SDK`) the
+  spatial-mesh subsystem is created by the PICO `PICOSpatialMesh` OpenXR feature,
+  which must be ENABLED on the Android build target. On enable, the C# layer
+  flips both `PassthroughFeature` (via the VST dependency) and `PICOSpatialMesh`
+  on by reflection (mirrors the SDK's `PXR_Utils.EnableOpenXRFeature<T>()`), and
+  the bundled `SpatialMeshManager` reads the mesh from the OpenXR subsystem +
+  `OpenXRExtensions.SpatialMeshDataUpdated` instead of the native path. All
+  automatic — but the OpenXR loader + PICO feature group must already be enabled
+  by the user (SKILL.md §3.1); the skill does not toggle providers.
 - Enable also forces **PICO Stereo Rendering Mode = MultiPass**
   (`PXR_Settings.stereoRenderingModeAndroid`, shown in Project Settings > XR
   Plug-in Management > PICO). MR sense-data (passthrough + the spatial mesh)

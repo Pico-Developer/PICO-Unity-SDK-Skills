@@ -9,14 +9,23 @@ Trigger words: 虚拟手 / 手 / 手交互 / hand / hand tracking / hands.
 ## Dependency
 
 - XR Origin present
-- PICO hand-model prefabs (`HandLeft` / `HandRight`) in the PICO SDK
+- Hand-model prefabs, runtime-branched: PICO-native path needs the PICO
+  `HandLeft` / `HandRight` prefabs (in the PICO SDK); OpenXR path needs the Unity
+  XR Hands `HandVisualizer` sample (`com.unity.xr.hands`, imported on demand).
 - **XRI `Hands Interaction Demo` sample** — enable imports this sample from
   `com.unity.xr.interaction.toolkit` to source the hand-interactor rig. Because
   importing a sample copies assets and triggers an Editor recompile, **enable is
   TWO-PHASE the first time** (see below). If XRI is not installed, the interactor
   cannot be mounted and the C# layer reports `error`.
-- The hand _models_ themselves use the PICO-native path (`PXR_Hand` + PICO hand
-  prefabs) and need no `com.unity.xr.hands` package.
+- The hand _models_ are runtime-branched. On the **PICO-native** path they use
+  the PICO-native prefabs (`PXR_Hand` + `HandLeft`/`HandRight`), which need no
+  `com.unity.xr.hands` package. On the **OpenXR** path (`ENABLE_PICO_OPENXR_SDK`)
+  the native `PXR_Hand` script is not compiled, so enable instead mounts the
+  Unity **XR Hands `HandVisualizer`** prefabs (`Left Hand Tracking` /
+  `Right Hand Tracking`, root = `XRHandSkeletonDriver`) from `com.unity.xr.hands`
+  — mirroring the PICO SDK's own OpenXR hand building block (`GenerateXRHands`).
+  Mounting the PICO prefabs under OpenXR would leave a missing-script on the
+  prefab root, so the two paths must not be mixed.
 
 ## Cheatsheet
 
@@ -24,11 +33,15 @@ Trigger words: 虚拟手 / 手 / 手交互 / hand / hand tracking / hands.
 
 - Pre: XR Origin (via orchestration step B.1).
 - Call: `pico_xr_hand(action=enable)`.
-- **Mounts the PICO hand models** `HandLeft` / `HandRight` under the XR Origin's
-  Camera Offset as agent-owned markers (`[PICO_MCP] Hand Left` /
-  `[PICO_MCP] Hand Right`), applies the PICO project settings
-  `handTracking = true` and `handTrackingSupportType = ControllersAndHands`, and
-  wires the mounted hands into the XR Origin's `XRInputModalityManager`.
+- **Mounts the hand models** (runtime-branched): on the PICO-native path the
+  PICO `HandLeft` / `HandRight` prefabs; on the OpenXR path the Unity XR Hands
+  `Left Hand Tracking` / `Right Hand Tracking` prefabs (imported on demand from
+  the `HandVisualizer` sample — two-phase like the interactor rig). Either way
+  they are mounted under the XR Origin's Camera Offset as agent-owned markers
+  (`[PICO_MCP] Hand Left` / `[PICO_MCP] Hand Right`), the PICO project settings
+  `handTracking = true` and `handTrackingSupportType = ControllersAndHands` are
+  applied, and the mounted hands are wired into the XR Origin's
+  `XRInputModalityManager`.
 - **Mounts the XRI hand INTERACTOR rig** (defect ② + ③ fix): the PICO hand models
   are visual/tracking only and carry **no** interactor, so on their own a pinch
   can never become an XRI select and `pico_xr_grab` has nothing to grab with.
@@ -138,8 +151,11 @@ Save Scene                     → ok
 
 ## Notes
 
-- PICO hand prefabs ship with the PICO SDK already in the project. No extra
-  package install is needed for the MODELS.
+- PICO hand prefabs ship with the PICO SDK already in the project (PICO-native
+  path). No extra package install is needed for the MODELS on that path. On the
+  OpenXR path the models come from the Unity XR Hands `HandVisualizer` sample,
+  which enable imports on demand (two-phase, same handshake as the interactor
+  rig).
 - The INTERACTOR rig comes from the XRI `Hands Interaction Demo` sample, which
   enable imports on demand (two-phase — see above). This is the ONLY thing that
   makes a pinch actually grab; mounting the models without an interactor (the old

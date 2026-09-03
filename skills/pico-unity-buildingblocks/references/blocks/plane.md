@@ -8,6 +8,19 @@
 
 - XR Origin present
 - **VST enabled** (passthrough required by PICO)
+- **The PICO-native runtime enabled** in XR Plug-in Management (the **PICO**
+  loader, `ENABLE_PICO_XR_SDK`). Plane detection is **PICO-native ONLY** — it is
+  **not** supported on the PICO OpenXR runtime (see the Notes). User
+  prerequisite; this skill does not toggle it.
+
+> **Plane detection does NOT run on PICO OpenXR.** Unlike Spatial Mesh, PICO
+> ships **no** plane-detection OpenXR feature, so under the OpenXR loader the
+> plane sense-data provider is never created and no plane data ever arrives. On
+> that runtime `pico_xr_plane(action=enable)` returns `error`; the agent must
+> STOP, relay the message, and guide the user to switch to the PICO-native
+> loader (SKILL.md §3.1) — do NOT retry. `pico_xr_status` reports `runtime`
+> (`native` / `openxr` / `none`); if it is `openxr`, tell the user plane
+> detection is unsupported BEFORE attempting enable.
 
 Plane Detection is the SensePack **sibling of Spatial Mesh**: both start a
 sense-data system, then build and update meshes at runtime. The only
@@ -27,9 +40,10 @@ the global `_TargetPosition` camera feed and the per-instance `_StartTime`
 feed that drive the `Custom/TriangleFadeOutFromCenter` fade shader — so
 detected planes render with the SAME visual as the spatial mesh. It calls
 `PXR_MixedReality.StartSenseDataProvider(PlaneDetection)`, subscribes to
-`PXR_Manager.PlaneDetectionDataUpdated`, bakes each plane's vertices to world
-space (`rotation*v+position`), and handles the extra `MeshChangeState.Unchanged`
-that the plane stream emits.
+`PXR_Manager.PlaneDetectionDataUpdated` (PICO-native only — see the Notes),
+bakes each plane's vertices to world space (`rotation*v+position`), and handles
+the extra `MeshChangeState.Unchanged` that the plane stream emits. The driver
+is guarded by `ENABLE_PICO_XR_SDK` and has **no OpenXR branch**.
 
 > **Why NOT the SDK's `PXR_PlaneDetectionManager`?** The SDK driver feeds
 > neither shader global (`_TargetPosition` / `_StartTime`) and overwrites the
@@ -128,21 +142,39 @@ Save Scene                        → ok
 
 ## Notes
 
-- Plane Detection requires the PICO XR SDK to be installed with
-  `ENABLE_PICO_XR_SDK` defined (the driver is guarded by that define). If the
-  type never loads after the settle loop, `enable` keeps returning
-  `skipped`/`error` with a clear message — relay it and ask the user to
-  install/update the PICO SDK. This block does NOT auto-install the PICO SDK.
+- Plane Detection is **PICO-native ONLY**: it requires a PICO XR SDK installed
+  with `ENABLE_PICO_XR_SDK` (the PICO-native loader) defined — the driver is
+  guarded by `ENABLE_PICO_XR_SDK` alone. Unlike Spatial Mesh, PICO ships **no
+  dedicated plane OpenXR feature**: the plane sense-data provider is created
+  ONLY inside the native `PXR_Loader`
+  (`UPxr_CreatePlaneDetectionSenseDataProvider`), so under the OpenXR runtime
+  the provider never exists, `PXR_Manager.PlaneDetectionDataUpdated` never fires
+  and `QueryPlaneAnchorAsync` has nothing to query.
+
+  - **Native** (`ENABLE_PICO_XR_SDK`): `PXR_Manager` pumps its own event loop
+    (`PXR_Manager.PollEvent`, driven by `PXR_Loader`), runs `QueryPlaneAnchor`
+    on each sense-data update and fires `PXR_Manager.PlaneDetectionDataUpdated`;
+    the driver only starts the provider and subscribes to that event.
+  - **OpenXR** (`ENABLE_PICO_OPENXR_SDK`): **not supported.**
+    `pico_xr_plane(action=enable)` returns `error` with a message to switch to
+    the PICO-native loader. The agent must STOP, relay it, and guide the user
+    (SKILL.md §3.1) — do NOT retry, do NOT mount the driver.
+
+  If the type never loads after the settle loop on the native runtime, `enable`
+  keeps returning `skipped`/`error` with a clear message — relay it and ask the
+  user to install/update the PICO SDK. This block does NOT auto-install the PICO
+  SDK or toggle providers.
+
 - Because plane detection is a mixed-reality feature, VST/passthrough is a
   hard prerequisite — the orchestration loop enables it first if needed.
 - Enable turns on `PXR_ProjectSetting.planeDetection` so `PXR_BuildProcessor`
   emits `enable_plane_detection` + the `SPATIAL_DATA` permission in the
-  Android manifest; disable clears only that flag. Runtime events are
-  dispatched by the shared `PXR_Manager` mounted on the XR Origin root by
-  `EnsureXROrigin` (never added/removed by this block). `PXR_Manager` itself
-  drives the plane query loop (`QueryPlaneAnchor` on every sense-data update)
-  and fires `PlaneDetectionDataUpdated`; the driver only starts the provider
-  and subscribes.
+  Android manifest; disable clears only that flag. Runtime event delivery is
+  driven by the shared `PXR_Manager` (mounted on the XR Origin root by
+  `EnsureXROrigin`, never added/removed by this block): it runs the plane query
+  loop (`QueryPlaneAnchor` on every sense-data update) and fires
+  `PlaneDetectionDataUpdated`, so the driver only starts the provider and
+  subscribes.
 - Enable also forces **PICO Stereo Rendering Mode = MultiPass**
   (`PXR_Settings.stereoRenderingModeAndroid`, shown in Project Settings > XR
   Plug-in Management > PICO). MR sense-data (passthrough + the plane mesh)
