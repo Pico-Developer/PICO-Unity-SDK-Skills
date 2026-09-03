@@ -39,7 +39,16 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
        If block is `plane`:
          (Plane Detection is the SensePack sibling of Spatial Mesh and shares
           the same VST dependency AND the same bundled-asset / two-phase
-          enable model.)
+          enable model — BUT it is PICO-NATIVE ONLY.)
+         PICO-NATIVE ONLY: there is no plane-detection OpenXR feature, so plane
+         detection does NOT run on the PICO OpenXR runtime. BEFORE resolving
+         deps, check r.data.runtime from the step-A snapshot: if it is "openxr",
+         STOP — do NOT enable VST, do NOT call pico_xr_plane(enable). Tell the
+         user plane detection is unsupported on PICO OpenXR and guide them to
+         switch to the PICO-native loader (SKILL.md §3.1). (If the agent still
+         calls enable on OpenXR, the C# layer returns `error` with the same
+         guidance — relay it and stop.)
+         On the PICO-native runtime:
          If r.data.vst.installed == false → first enable VST:
            call pico_xr_vst(action=enable)
            (no settle needed — VST does not trigger compile)
@@ -165,6 +174,20 @@ C. Perform the action
        MultiPass (PXR_Settings.stereoRenderingModeAndroid); MR sense-data
        composites incorrectly under Multiview. Project-level, not reverted on
        disable.
+     - RUNTIME PROVIDER (PICO-native vs PICO OpenXR) is a USER prerequisite,
+       NOT resolved here (SKILL.md §3.1). The block code branches on the
+       compile define (`ENABLE_PICO_XR_SDK` vs `ENABLE_PICO_OPENXR_SDK`) and, on
+       the OpenXR path, auto-enables the required OpenXR FEATURE asset on the
+       Android target (VST → PassthroughFeature; spatial_mesh → PICOSpatialMesh)
+       via reflection — mirrors the PICO SDK building
+       blocks. But the agent NEVER installs/toggles the XR Plug-in Management
+       LOADER. If neither define is set, the block returns error/skipped saying
+       the driver type never appeared → STOP and use the provider-missing
+       guidance template in SKILL.md §3.1; do NOT auto-fix or retry.
+     - PLANE DETECTION IS PICO-NATIVE ONLY: it has no OpenXR feature and does
+       NOT run on the PICO OpenXR runtime. When r.data.runtime == "openxr",
+       plane enable returns `error` — STOP, relay it, and guide the user to the
+       PICO-native loader (do NOT auto-fix or retry).
      - Plane Detection uses the SAME bundled fade-shader pipeline as Spatial
        Mesh: its custom `PlaneDetectionManager` reuses the shared wireframe
        mesh prefab + `TriangleFadeOutFromCenter` material, so the two MR

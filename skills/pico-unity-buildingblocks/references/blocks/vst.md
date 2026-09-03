@@ -7,6 +7,8 @@
 ## Dependency
 
 - XR Origin present
+- A PICO runtime enabled in XR Plug-in Management (PICO-native **or** PICO
+  OpenXR — see SKILL.md §3.1). User prerequisite; this skill does not toggle it.
 
 ## Cheatsheet
 
@@ -51,3 +53,11 @@ Save Scene                          → ok
   emits `enable_vst` in the Android manifest; disable clears only that flag.
   The shared `PXR_Manager` component (mounted on the XR Origin root by
   `EnsureXROrigin`) is never added or removed here.
+- **PICO OpenXR runtime.** When the project runs on the OpenXR loader
+  (`ENABLE_PICO_OPENXR_SDK`), passthrough is gated by the PICO `PassthroughFeature`
+  OpenXR feature asset, which must be ENABLED on the Android build target. On
+  enable, the C# layer flips it on by reflection (mirrors the SDK's
+  `PXR_Utils.EnableOpenXRFeature<PassthroughFeature>()`); on the PICO-native
+  path this is a harmless no-op. The agent does nothing extra — but the OpenXR
+  loader + PICO feature group must already be enabled by the user (SKILL.md
+  §3.1); the skill does not toggle providers.
