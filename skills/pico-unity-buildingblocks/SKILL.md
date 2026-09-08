@@ -11,9 +11,9 @@ description: >-
   Trigger when the user wants to enable / disable / configure / query any
   PICO XR feature — passthrough, controllers, locomotion, spatial mesh, hand
   tracking / virtual hands / XR Hands / xr-hands / xrhands, object grab & drag
-  / pick-up / 拾取 / 抓取 / 拖拽 / grabbable, etc. — or create an
+  / pick-up / grabbable, etc. — or create an
   XR Origin / XR rig.
-license: Apache-2.0
+license: 'Apache-2.0'
 ---
 
 # pico-unity-buildingblocks
@@ -214,6 +214,17 @@ performing any block action or when a domain reload occurs.
 - If you hit a `skipped` or `error` status anywhere, STOP, tell the user
   what blocked the workflow, suggest the obvious next step, and wait for
   their reply. Do NOT silently retry.
+  - **Exception — transitional `skipped`**: a first-enable that copies a
+    driver `.cs` / imports a sample (Plane, Hand) or a dependency-resolution
+    step (package / sample auto-install) legitimately returns
+    `status=skipped` with a `detail`/`warning` about recompiling or a
+    not-yet-installed package. This is a documented two-phase / settle step,
+    NOT a dead end: run ONE bounded post-write settle loop (or the
+    auto-install fallback) and retry the SAME action ONCE, as spelled out in
+    [`references/orchestration.md`](references/orchestration.md) §B.2 and the
+    pico-unity-package-manager workflow. Keep the stop-and-ask behaviour for
+    every other `skipped`, and for a second consecutive `skipped` after the
+    one retry.
 
 ## 9. Anti-patterns (DO NOT)
 

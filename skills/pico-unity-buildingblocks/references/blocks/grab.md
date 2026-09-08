@@ -4,7 +4,7 @@
 
 `pico_xr_grab` — actions: `enable` / `disable` / `status` / `make_grabbable`
 
-Trigger words: 拾取 / 抓取 / 抓握 / 拖拽 / 拖动 / 拿起 / grab / grabbable / pick up / pickup / drag / interactable.
+Trigger words: pick up / grab / grasp / drag / grabbable / pickup / interactable.
 
 > **Why one tool owns both halves.** XRI object grabbing only works when BOTH
 > sides of the interaction pair are wired up, and either half alone is inert:
@@ -23,9 +23,9 @@ Trigger words: 拾取 / 抓取 / 抓握 / 拖拽 / 拖动 / 拿起 / grab / grab
 > object into a grabbable.
 
 > **Grab is DECOUPLED from hand vs controller.** Grab does not decide — and must
-> not change — which input source (hand or controller) is visible. "手柄拾取"
+> not change — which input source (hand or controller) is visible. "Controller grab"
 > (grab with a controller) means the user enables `pico_xr_controller` and then
-> grab; "手拾取" (grab with a hand) means the user enables `pico_xr_hand` and
+> grab; "Hand grab" (grab with a hand) means the user enables `pico_xr_hand` and
 > then grab. Grab itself is source-agnostic: `enable` no longer re-shows the
 > controller module or adds interactors to controller nodes. The guarantee that
 > **a visible controller uses the PICO prefab (not the generic Starter Assets
@@ -112,7 +112,7 @@ Trigger words: 拾取 / 抓取 / 抓握 / 拖拽 / 拖动 / 拿起 / grab / grab
   at runtime also requires an enabled input block (`pico_xr_controller` /
   `pico_xr_hand`) to supply the interactor.
 
-## Typical pipeline — controller grab ("手柄拾取") + a specific object
+## Typical pipeline — controller grab + a specific object
 
 ```
 pico_xr_status()                                   → xr_origin=ok, grab=off
@@ -123,7 +123,7 @@ pico_xr_status()                                   → grab=on   (internal verif
 Save Scene                                         → ok
 ```
 
-### Typical pipeline — hand grab ("手拾取")
+### Typical pipeline — hand grab
 
 ```
 pico_xr_hand(action=enable)                → ok   (PICO hands + OpenXR HandInteractionProfile)
