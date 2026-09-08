@@ -1,79 +1,79 @@
-# Unity 版本判断与 LTS 清单
+# Unity version detection and LTS list
 
-## 判断当前项目 Unity 版本
+## Detecting the current project's Unity version
 
-读取 `$PROJECT_ROOT/ProjectSettings/ProjectVersion.txt`,示例内容:
+Read `$PROJECT_ROOT/ProjectSettings/ProjectVersion.txt`, example content:
 
 ```
 m_EditorVersion: 6000.0.73f1
 m_EditorVersionWithRevision: 6000.0.73f1 (a166abc3bf0e)
 ```
 
-`m_EditorVersion` 的第一段即主版本号:
+The first segment of `m_EditorVersion` is the major version:
 
-- `6000.x.y` → Unity 6(即 "Unity 6 及以后")。
-- 主版本号 `< 6000`(如 `2022.3.x`、`2021.3.x`)→ 低于 Unity 6。
+- `6000.x.y` → Unity 6 (i.e., "Unity 6 and later").
+- Major version `< 6000` (e.g. `2022.3.x`, `2021.3.x`) → older than Unity 6.
 
-## "Unity 6 之后的 LTS" 候选清单
+## "Post-Unity 6 LTS" candidate list
 
-在向开发者展示可选版本时,列出 Unity 6 系列的 LTS 版本。以官方最新 LTS 发布为准,展示前建议实时确认最新补丁号。当前可选(示例):
+When presenting selectable versions to the developer, list Unity 6-series LTS versions. Use the latest official LTS releases; before display, it's recommended to confirm the latest patch numbers in real time. Currently selectable (examples):
 
-- `6000.0.x` LTS（Unity 6.0 LTS）— 例如 `6000.0.73f1`
-- `6000.1.x` LTS（后续 LTS，如已发布）
-- `6000.2.x` LTS（后续 LTS，如已发布）
+- `6000.0.x` LTS (Unity 6.0 LTS) — e.g. `6000.0.73f1`
+- `6000.1.x` LTS (later LTS, if released)
+- `6000.2.x` LTS (later LTS, if released)
 
-> 说明:仅列出 Unity 6(6000 系列)及以后的 LTS 版本。具体可用的补丁版本请以 Unity 官方 LTS 发布页为准。展示时建议给出完整版本号(含 `f1` 之类的后缀),以便 Unity CLI 精确定位安装。
+> Note: only Unity 6 (6000-series) and later LTS versions are listed. Refer to the official Unity LTS release page for the actual available patch versions. When displaying, provide the full version string (including suffixes like `f1`) so the Unity CLI can precisely locate the installation.
 
-## 查询本机已安装的 Unity 编辑器
+## Query Unity editors installed on the local machine
 
-用 **Unity CLI**(而非 Unity Hub)列出本机已安装的编辑器(由本地 agent 直接在开发者本机的本地 shell 中执行):
+Use the **Unity CLI** (not Unity Hub) to list installed editors on the local machine (executed by the local agent directly in the developer's local shell):
 
 ```
 unity editors --installed
 ```
 
-> 说明:本 skill 统一使用 Unity CLI(与「注册并打开项目」阶段保持一致的工具链),不使用 Unity Hub。输出为已安装版本号列表(如 `6000.0.73f1`)。据此把候选 LTS 拆成两组。
+> Note: this skill uses the Unity CLI throughout (matching the toolchain used in the "register and open project" stage); Unity Hub is not used. The output is a list of installed version numbers (e.g. `6000.0.73f1`), used to split the candidate LTS into two groups.
 
-## 版本选择的两组清单(对应阶段 C 表单的版本选项)
+## The two version-selection groups (for the Stage C form's version options)
 
-向开发者展示时**必须分成两类**:
+When presenting to the developer, **you must split into two categories**:
 
-- **2.1.1 已安装列表**:上面 `unity editors --installed` 查到的、且属于 Unity 6+ LTS 的版本。开发者选中其一 → 直接作为 `unity_version`,无需安装。
-- **2.1.2 未安装列表**:官方 Unity 6+ LTS 中本机尚未安装的版本。开发者若选中其一 → 先用下面命令安装该版本,再作为 `unity_version`。
+- **2.1.1 Installed list**: versions found by `unity editors --installed` above that also belong to Unity 6+ LTS. When the developer picks one → use it directly as `unity_version`; no installation needed.
+- **2.1.2 Not-installed list**: official Unity 6+ LTS versions not yet installed locally. When the developer picks one → install it first using the command below, then use it as `unity_version`.
 
-安装新 Unity 版本(**必须用 `-m android` 捆绑安装 Android Build Support**,PICO 为 Android 平台):
+Install a new Unity version (**must use `-m android` to bundle-install Android Build Support**; PICO is an Android platform):
 
 ```
 unity install <VERSION> -m android
 ```
 
-若某个已安装版本缺少 Android 模块,用以下命令为该已有版本补装 Android(查看输出中的 **Status** 列判断该模块是否已安装):
+If an installed version lacks the Android module, use the command below to add Android to that existing version (check the **Status** column in the output to determine whether the module is already installed):
 
 ```
 unity install-modules -e <VERSION> -m android
 ```
 
-> 若本机未安装 Unity CLI,提示开发者先安装 Unity CLI 后再继续。安装大版本耗时较长,执行前告知开发者。
+> If the Unity CLI is not installed locally, ask the developer to install the Unity CLI first before continuing. Installing a major version takes a while — notify the developer beforehand.
 
-### 安装后同步到 Unity Hub
+### Sync to Unity Hub after installation
 
-通过 `unity install` 安装的编辑器,可能不会自动出现在 Unity Hub 的「已安装编辑器」列表里(Unity Hub 无记录)。安装完成后,把该编辑器路径注册进 Unity Hub,使其可见:
+Editors installed via `unity install` may not automatically appear in Unity Hub's "Installed editors" list (Unity Hub has no record of them). After installation completes, register the editor path with Unity Hub so it becomes visible:
 
-- 定位安装路径:`unity editors --installed` 输出中该版本对应的 editor 可执行文件/安装目录。
-- 让 Unity Hub 收录该路径(任选其一):
-  - Unity Hub 图形界面:Installs → 右上角 `Locate`(定位已有安装)→ 选中该版本的安装目录;
-  - 或通过 Unity Hub CLI 添加已安装编辑器路径(`... --headless install-path --set` / `editors --add <PATH>`,以本机 Hub 版本支持的子命令为准)。
+- Locate the install path: the editor executable/install directory for that version listed in `unity editors --installed`.
+- Have Unity Hub pick up the path (choose one):
+  - Unity Hub GUI: Installs → top-right `Locate` (locate an existing install) → select the install directory of that version;
+  - Or use the Unity Hub CLI to add an existing editor path (`... --headless install-path --set` / `editors --add <PATH>` — subject to what your local Hub version supports).
 
-> 说明:版本的查询与安装统一走 **Unity CLI**;仅在「让 Hub 也能看到该编辑器」这一步涉及 Unity Hub 的收录操作。若开发者不使用 Unity Hub,可跳过本小节。
+> Note: version queries and installations go through the **Unity CLI**; only the "make Hub aware of this editor" step involves a Unity Hub action. Developers not using Unity Hub can skip this subsection.
 
-## 注册并打开项目(对应阶段 D.7)
+## Register and open the project (corresponds to Stage D.7)
 
-初始化收尾时,先把项目注册进 Unity 的已知项目列表(便于开发者日后从项目列表直接找到并打开),再用选定版本打开,并强制目标平台为 Android:
+When wrapping up initialization, first register the project into Unity's known-projects list (so the developer can later open it directly from the project list), then open it with the selected version, forcing the target platform to Android:
 
 ```
 unity projects add /path/to/PROJECT_ROOT
 unity open /path/to/PROJECT_ROOT --build-target Android
 ```
 
-- `unity projects add <PROJECT_ROOT>`:将项目加入 Unity 已知项目列表,不启动编辑器。
-- `unity open ... --build-target Android`:以选定的 `unity_version` 打开该项目,并将 Active Build Target 切为 **Android**。PICO 为 Android 平台,禁止 Windows / macOS / WebGL 等其它平台。若本机存在多个版本,确保打开时使用的是表单中选定的版本;若该版本缺少 Android Build Support,请先补装 Android 模块再打开(安装新版本用 `unity install <VERSION> -m android`,已有版本补装用 `unity install-modules -e <VERSION> -m android`,查看输出 **Status** 列确认是否已装)。
+- `unity projects add <PROJECT_ROOT>`: add the project to Unity's known-projects list; does not launch the editor.
+- `unity open ... --build-target Android`: open the project with the selected `unity_version` and set the Active Build Target to **Android**. PICO is an Android platform — other platforms like Windows / macOS / WebGL are not allowed. If multiple versions exist locally, make sure the version chosen in the form is the one being used; if that version lacks Android Build Support, install the Android module first before opening (bundle-install for a new version: `unity install <VERSION> -m android`; add-on install for an existing version: `unity install-modules -e <VERSION> -m android`; check the **Status** column in the output to confirm).
