@@ -8,13 +8,13 @@ description: >-
   "configure the PICO SDK"), do not self-trigger; wait for an explicit
   `/pico-unity-init`. Functionality first probes whether the project is empty.
   Non-empty then checks the 3 packages and incrementally installs as needed.
-  Empty then sparse-clones the matching template (`PICOXR`/`OpenXR`) from
+  Empty then sparse-clones the matching template (`PICOSpatial`/`PICOXR`/`OpenXR`) from
   `Pico-Developer/PICO-Unity-Project-Templates`, falling back to
   `pico-cli project create` on failure; then syncs version info and installs
   AI Assistant / MCP Extensions / PICO Unity SDK (XR). Finally writes
   `config.json` and opens the project via `unity open ... --build-target
   Android`, switching the Active Build Target to Android on startup.
-license: Apache-2.0
+license: 'Apache-2.0'
 ---
 
 # pico-unity-init
@@ -35,7 +35,7 @@ PICO Unity project initialization wizard. Run the initialization flow when `.pic
 **Emptiness check first → branch handling**:
 
 - **Non-empty project** (Stage B): do not copy a template; directly **incrementally install the 3 packages** (AI Assistant / Unity MCP Extensions / PICO Unity SDK XR), skipping or upgrading based on existing dependency state.
-- **Empty project** (Stage C → D): preferentially sparse-clone the corresponding template subdirectory (`PICOXR` / `OpenXR`) from `Pico-Developer/PICO-Unity-Project-Templates` (GitHub) into `$PROJECT_ROOT`; fall back to `pico-cli project create` on failure. Then modify `productName` / `ProjectVersion.txt`, and install the 3 packages.
+- **Empty project** (Stage C → D): preferentially sparse-clone the corresponding template subdirectory (`PICOSpatial` / `PICOXR` / `OpenXR`) from `Pico-Developer/PICO-Unity-Project-Templates` (GitHub) into `$PROJECT_ROOT`; fall back to `pico-cli project create` on failure. Then modify `productName` / `ProjectVersion.txt`, and install the 3 packages.
 
 **Shared wrap-up**: both branches finally open the project with `unity open ... --build-target Android`, letting Unity switch the Active Build Target to Android during startup (equivalent to the official Editor launch argument `-buildTarget Android`) — no need to switch manually after opening, and no dependency on MCP tools.
 
@@ -146,12 +146,12 @@ Refer to [references/unity-versions.md](references/unity-versions.md):
 
 **Only executed when Stage A determines the project is empty.** Merge into **a single form** collected all at once:
 
-| Field           | Control       | Options                     | When shown                          |
-| --------------- | ------------- | --------------------------- | ----------------------------------- |
-| `sdk`           | Single-select | `openxr`, `picoxr`          | Always                              |
-| `unity_version` | Single-select | See "Version options" below | Always                              |
-| `devices`       | Multi-select  | `pico swan`, `pico 4 ultra` | Always (**required, at least one**) |
-| `business_type` | Single-select | `Yes`, `No`                 | Always                              |
+| Field           | Control       | Options                       | When shown                          |
+| --------------- | ------------- | ----------------------------- | ----------------------------------- |
+| `sdk`           | Single-select | `spatial`, `picoxr`, `openxr` | Always                              |
+| `unity_version` | Single-select | See "Version options" below   | Always                              |
+| `devices`       | Multi-select  | `pico swan`, `pico 4 ultra`   | Always (**required, at least one**) |
+| `business_type` | Single-select | `Yes`, `No`                   | Always                              |
 
 > **`devices` is required**: if the developer submits without selecting any device, prompt "Please select at least one target device" and require re-selection; only after validation passes may Stage D begin.
 >
@@ -169,27 +169,30 @@ Based on the form's `sdk` selection, map the value to the **subdirectory name** 
 
 - `sdk = picoxr` → subdirectory `PICOXR`
 - `sdk = openxr` → subdirectory `OpenXR`
+- `sdk = spatial` → subdirectory `PICOSpatial`
 
 **Preferred method (sparse clone, without git history)**: pull only the selected subdirectory's contents and lay them directly into `$PROJECT_ROOT`.
 
 ```bash
 TEMPLATE_REPO="https://github.com/Pico-Developer/PICO-Unity-Project-Templates.git"
-TEMPLATE_DIR="PICOXR"   # or "OpenXR", fill in per sdk selection
+TEMPLATE_DIR="PICOXR"   # or "OpenXR" / "PICOSpatial", fill in per sdk selection
 
 # Use a temp directory for sparse checkout, taking only the needed subdirectory
 TMP_TPL="$(mktemp -d)"
 git clone --depth 1 --filter=blob:none --sparse "$TEMPLATE_REPO" "$TMP_TPL"
 git -C "$TMP_TPL" sparse-checkout set "$TEMPLATE_DIR"
 
-# Move the subdirectory contents (including hidden files) to $PROJECT_ROOT, then remove the temp dir and .git
+# Move the subdirectory contents (including hidden files) to $PROJECT_ROOT, then remove the temp dir.
+# The template repo's Git metadata lives at "$TMP_TPL/.git" (the clone root), NOT inside
+# "$TMP_TPL/$TEMPLATE_DIR/", so the glob below never moves any .git into $PROJECT_ROOT.
+# We therefore only ever delete the validated temp directory and NEVER touch
+# "$PROJECT_ROOT/.git" — any pre-existing project Git metadata is preserved.
 shopt -s dotglob 2>/dev/null || true
 mv "$TMP_TPL/$TEMPLATE_DIR/"* "$PROJECT_ROOT/"
 rm -rf "$TMP_TPL"
-# After moving, $PROJECT_ROOT should not retain a .git; if mv accidentally brought the repo's .git over, force-clean it
-rm -rf "$PROJECT_ROOT/.git"
 ```
 
-- Upstream repo structure: two subfolders under the root, `PICOXR/` and `OpenXR/`, each an **independent, openable Unity project** (containing `Assets/`, `Packages/manifest.json`, `ProjectSettings/`, etc.), with the Unity Editor version unified at `6000.0.73f1`.
+- Upstream repo structure: three subfolders under the root, `PICOSpatial/`, `PICOXR/`, and `OpenXR/`, each an **independent, openable Unity project** (containing `Assets/`, `Packages/manifest.json`, `ProjectSettings/`, etc.), with the Unity Editor version unified at `6000.0.73f1`.
 - This clone goes over GitHub HTTPS (443), following the network requirements of [Stage D.4](#d4-install-the-3-packages-ai-assistant--mcp-extensions--pico-sdk-xr); if the clone fails (no network / SSL issue / GitHub authentication blocked), immediately fall back to the **fallback method** below.
 
 **Fallback method (used when the clone fails)**: call the `pico-cli` local template generator.
@@ -202,6 +205,7 @@ pico-cli project create --template <template> --name pico --package com.example.
 
 - `sdk = picoxr` → `--template picoxr`
 - `sdk = openxr` → `--template openxr`
+- `sdk = spatial` → `--template PICOSpatial`
 
 Run in `$PROJECT_ROOT`. The command generates a complete Unity project structure (`Assets/`, `Packages/manifest.json`, `ProjectSettings/`, `UserSettings/`, etc.).
 
@@ -274,7 +278,7 @@ After the empty-project template is generated, `Packages/manifest.json` already 
 
 ### D.5 Write config.json
 
-Write `project_name`, `sdk` (`picoxr` or `openxr`), `unity_version`, `platform` (fixed `android`), `devices`, and `business_type` into `$PROJECT_ROOT/.pico-cli/config.json`. See the config structure in [references/config-schema.md](references/config-schema.md). If `.pico-cli/` does not exist, create it first (create only up to where `config.json` lives; do not create `downloads/`).
+Write `project_name`, `sdk` (`spatial`, `picoxr`, or `openxr`), `unity_version`, `platform` (fixed `android`), `devices`, and `business_type` into `$PROJECT_ROOT/.pico-cli/config.json`. See the config structure in [references/config-schema.md](references/config-schema.md). If `.pico-cli/` does not exist, create it first (create only up to where `config.json` lives; do not create `downloads/`).
 
 ### D.6 Register and open the project (switch to Android on startup)
 
@@ -305,7 +309,7 @@ unity open /path/to/$PROJECT_ROOT --build-target Android
 Give the developer a brief report:
 
 - Project type (empty project / non-empty project);
-- For an empty project, the **template source**: "GitHub sparse-clone `PICOXR|OpenXR`" or "fallback `pico-cli project create --template ...`";
+- For an empty project, the **template source**: "GitHub sparse-clone `PICOSpatial|PICOXR|OpenXR`" or "fallback `pico-cli project create --template ...`";
 - Unity version (if `ProjectVersion.txt` was rewritten, note the adjustment from `xxx` to the selected version);
 - Handling result of the 3 packages: AI Assistant (**newly installed / already present, skipped / upgraded to 2.17.0-pre.1**), MCP Extensions (**newly installed / already present, skipped**), PICO SDK XR (including gltf-exporter and SpatialAdapter, 3 git dependencies total) (**newly installed / ≥6.0.0 skipped / <6.0.0 upgrade-overwritten / version unknown, skipped**);
 - Target platform: switched by Unity on startup via `unity open ... --build-target Android`, noting whether it was "switched to Android by the CLI argument this time / switched to Android after installing Android Build Support and reopening";

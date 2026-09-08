@@ -8,26 +8,15 @@ description: >-
   so downstream steps run safely. Also called internally by
   `pico-unity-buildingblocks` before enabling a feature block.
 
-  Primary usage: called internally by `pico-unity-buildingblocks` and other
-  skills that need a package or sample as a dependency — most invocations are
-  skill-driven, not user-initiated. Direct user trigger is the exception: only
-  activate when the user explicitly names a Unity package by its reverse-DNS
+  Trigger when the user explicitly names a Unity package by its reverse-DNS
   identifier (e.g. `com.unity.xr.hands`, `com.unity.xr.interaction.toolkit`)
   or uses an install/remove/update/query intent paired with a concrete package
-  name. Also triggered directly when the user wants to import a named sample
-  or query installed packages / versions.
-
-  DO NOT trigger on feature-level requests ("enable hand tracking", "add
-  passthrough", "set up XR Hands") — those route to `pico-unity-buildingblocks`
-  which will call this skill internally as needed. Trigger only when the user
-  references a Unity package explicitly (e.g. `com.unity.xr.hands`,
-  "XR Hands package", "xrhand package", "install com.unity.inputsystem").
-
-  Prerequisites: Unity Editor running with PICO MCP Extensions installed (the
-  `pico_xr_package` tool exposed by the Unity MCP bridge) and the MCP client
-  connected; if not, see the connection-precheck in
-  `pico-unity-buildingblocks`.
-license: Apache-2.0
+  name. Also triggered when the user wants to import a named sample or query
+  installed packages / versions. Do NOT trigger on feature-level requests
+  ("enable hand tracking", "add passthrough") — those route to
+  `pico-unity-buildingblocks`. Prerequisites: Unity Editor running with PICO
+  MCP Extensions installed and the MCP client connected.
+license: 'Apache-2.0'
 ---
 
 # pico-unity-package-manager
@@ -218,5 +207,11 @@ MCP client.
 - DO NOT hard-code package versions in your replies unless the user asks. Let
   the registry resolve "latest" when `version` is omitted.
 - DO NOT treat `status=skipped` as a hard failure. It's an actionable warning.
+  A `skipped` from a not-yet-installed package/sample is transitional: follow
+  the §4.2/§4.3 auto-install-then-retry flow (settle loop + one retry) instead
+  of stopping. This mirrors the transitional-`skipped` exception in
+  pico-unity-buildingblocks (`SKILL.md` §8 / `references/orchestration.md`
+  step C); keep the two skills consistent — stop-and-ask only applies to
+  non-transitional `skipped` or a second consecutive `skipped` after the retry.
 - DO NOT loop a failed `add` more than once without changing parameters; relay
   the error to the user and let them decide.

@@ -138,8 +138,8 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           Whether a hand or controller is visible — and that a visible
           controller uses the PICO prefab — is owned by the input blocks
           (`pico_xr_controller` / `pico_xr_hand`), NOT by grab. So a full
-          "手柄拾取" flow is `pico_xr_controller(enable)` + `pico_xr_grab(enable)`;
-          a "手拾取" flow is `pico_xr_hand(enable)` + `pico_xr_grab(enable)`.
+          "controller grab" flow is `pico_xr_controller(enable)` + `pico_xr_grab(enable)`;
+          a "hand grab" flow is `pico_xr_hand(enable)` + `pico_xr_grab(enable)`.
           `enable` only guarantees a scene XRInteractionManager exists (creating
           an agent-owned host only if none exists) and drops the grab marker.
           Because the broker alone makes nothing grabbable, an
@@ -160,6 +160,14 @@ C. Perform the action
      - ok               → relay summary
      - already_present  → relay summary + "no change made"
      - skipped          → relay summary + warning, ask user how to proceed
+                          EXCEPTION: a TRANSITIONAL skipped from a first-enable
+                          two-phase step (Plane/Hand §B.2 — `detail` mentions
+                          recompiling) or a dependency auto-install
+                          (package/sample not yet installed) is NOT a stop.
+                          Run one bounded settle loop (or the auto-install
+                          fallback) and retry the SAME action ONCE. Only if it
+                          is still skipped after that one retry do you fall back
+                          to "ask user how to proceed".
      - error            → relay summary + error, ask user how to proceed
 
    Side effects worth knowing (no extra step needed — handled by the C# layer):

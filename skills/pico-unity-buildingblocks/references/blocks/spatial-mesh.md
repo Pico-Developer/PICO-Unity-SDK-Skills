@@ -48,10 +48,10 @@ configured exactly as follows:
 | Field (serialized name)                        | Value                                                                              |
 | ---------------------------------------------- | ---------------------------------------------------------------------------------- |
 | `Mask` (`m_mask`)                              | `TA_MR_Unlit`                                                                      |
-| **通用配置**                                   |                                                                                    |
+| **General configuration**                      |                                                                                    |
 | `Max Render Per Frame` (`maxRenderPerFrame`)   | `200`                                                                              |
 | `Mesh Amount` (`meshAmount`)                   | `300`                                                                              |
-| **材质与容器**                                 |                                                                                    |
+| **Materials and containers**                   |                                                                                    |
 | `Mesh Container` (`meshContainer`)             | `SpatialMesh` (Transform) — the Spatial Mesh root Transform                        |
 | `Mesh Prefab` (`meshPrefab`)                   | `MeshTriangleFadeOutPrefab`                                                        |
 | `Mesh Calc Prefab` (`meshCalcPrefab`)          | `ConvexHull` (project prefab; see note)                                            |
