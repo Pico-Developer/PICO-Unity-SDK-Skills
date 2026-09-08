@@ -4,7 +4,7 @@
 
 `pico_xr_hand` — actions: `enable` / `disable` / `status`
 
-Trigger words: 虚拟手 / 手 / 手交互 / hand / hand tracking / hands.
+Trigger words: virtual hand / hand / hand interaction / hand tracking / hands.
 
 ## Dependency
 
