@@ -1,10 +1,46 @@
 ---
 name: develop-pico-unity-apps
-description: Develop, configure, migrate, debug, and optimize XR apps and spatial apps with PICO Unity SDK 6.0.0. Use when TRAE CLI needs to inspect a Unity project for PICO integration; choose among PICO XR, Unity OpenXR, and PICO Spatial modes; create an immersive XR or spatial scene; implement controllers, hands, eye tracking, body tracking, passthrough, anchors, spatial mesh, foveated rendering, compositor layers, haptics, spatial cameras, spatial input, or spatial UI; migrate legacy PICO namespaces; configure Android builds and permissions; diagnose build, rendering, tracking, device, SpatialAdapter, or performance problems; or prepare a PICO app for on-device validation.
+description: >
+  Audit, migrate, configure, and diagnose PICO-specific Unity SDK integration
+  across PICO XR, Unity OpenXR with PICO extensions, and PICO Spatial. Use only
+  when the task explicitly depends on a PICO SDK package, namespace, API,
+  device capability, PICO OS behavior, Portal configuration, SpatialAdapter,
+  or PICO Android/device validation. Do not use for generic Unity gameplay, 3D
+  content, meshes, materials, shaders, animation, physics, UI, C# architecture,
+  URP, optimization, or Android development merely because the project targets
+  PICO. Prefer pico-unity-spatial for Spatial setup and the specific
+  spatialadapter skills for concrete Spatial Adapter APIs.
 license: Apache-2.0
 ---
 
 # Develop XR and Spatial Apps with PICO Unity SDK
+
+## Activation Gate
+
+Use this skill only when both conditions are true:
+
+1. There is a concrete PICO-specific signal:
+   - The user explicitly mentions PICO, PXR, PICO OS, PICO Portal, SpatialAdapter, Play-to-PICO, a PICO device, or a PICO SDK API/package; or
+   - Logs, source code, or project configuration identify a PICO-specific component as part of the problem.
+2. The requested work crosses a PICO integration boundary:
+   - SDK mode or package compatibility;
+   - PICO-specific API or capability;
+   - PICO Android configuration or permission;
+   - PICO device or runtime behavior; or
+   - Migration between PICO SDK modes or namespaces.
+
+Do not activate this skill solely because:
+
+- The repository is a PICO project.
+- A PICO package is installed.
+- The target platform is Android or XR.
+- The task involves ordinary Unity 3D, gameplay, physics, animation, materials, shaders, UI, serialization, navigation, or general performance.
+
+When the task is generic Unity work inside a PICO project, use the relevant generic Unity skill. Consult this skill only for the isolated PICO integration boundary.
+
+## Routing Boundary
+
+Use this skill for project-wide audits, mode selection, migration, Android builds, and broader diagnostics. For PICO Spatial setup and feature routing, prefer [pico-unity-spatial](../pico-unity-spatial/SKILL.md). For concrete Spatial Adapter scene, camera, input, component, or runtime APIs, select the narrower skill from [spatialadapter-runtime-overview](../spatialadapter-runtime-overview/SKILL.md) instead of loading multiple overlapping workflows.
 
 ## Core Principles
 

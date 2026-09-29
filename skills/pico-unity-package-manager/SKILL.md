@@ -1,21 +1,19 @@
 ---
 name: pico-unity-package-manager
 description: >-
-  Manage Unity Package Manager packages and their samples for PICO XR
-  workflows via the Unity MCP `pico_xr_package` tool. Handles install, remove,
-  update, query, list-samples, and import-sample operations, and waits for the
-  Editor to finish recompiling / domain-reloading after every mutating action
-  so downstream steps run safely. Also called internally by
-  `pico-unity-buildingblocks` before enabling a feature block.
+  Manage Unity Package Manager packages and samples for PICO XR through the
+  Unity MCP `pico_xr_package` tool. Maps install, remove, update, query,
+  list-samples, and import-sample intents to exact action tokens; waits for
+  Unity compilation/domain reload after mutations; and supports
+  `pico-unity-buildingblocks` dependency setup.
 
-  Trigger when the user explicitly names a Unity package by its reverse-DNS
-  identifier (e.g. `com.unity.xr.hands`, `com.unity.xr.interaction.toolkit`)
-  or uses an install/remove/update/query intent paired with a concrete package
-  name. Also triggered when the user wants to import a named sample or query
-  installed packages / versions. Do NOT trigger on feature-level requests
-  ("enable hand tracking", "add passthrough") — those route to
-  `pico-unity-buildingblocks`. Prerequisites: Unity Editor running with PICO
-  MCP Extensions installed and the MCP client connected.
+  Trigger when the user names a package identifier (for example,
+  `com.unity.xr.hands`) or pairs an install/remove/update/query intent with a
+  concrete package name. Also trigger for listing installed packages or
+  versions and importing or listing named samples. Do not trigger for
+  feature-level requests such as enabling hand tracking or passthrough; route
+  those to `pico-unity-buildingblocks`. Requires a running Unity Editor with
+  PICO MCP Extensions installed and the MCP client connected.
 license: 'Apache-2.0'
 ---
 
@@ -32,15 +30,15 @@ pico_xr_package(action, identifier?, packageName?, version?, sampleName?, overwr
 
 where `action` is one of:
 
-| action          | parameters                                                             | purpose                                  |
-| --------------- | ---------------------------------------------------------------------- | ---------------------------------------- |
-| `list`          | —                                                                      | Snapshot of all installed packages       |
-| `info`          | `packageName`                                                          | Is package X installed? At what version? |
-| `add`           | `identifier` (e.g. `com.unity.xr.hands` or `com.unity.xr.hands@1.5.0`) | Install / switch version                 |
-| `remove`        | `packageName`                                                          | Uninstall                                |
-| `update`        | `packageName`, `version?` (empty = latest)                             | Switch version                           |
-| `list_samples`  | `packageName`, `version?`                                              | Samples declared by the package          |
-| `import_sample` | `packageName`, `sampleName`, `overwrite?`, `version?`                  | Copy a sample into Assets/Samples/…      |
+| action          | parameters                                                             | purpose                                   |
+| --------------- | ---------------------------------------------------------------------- | ----------------------------------------- |
+| `list`          | —                                                                      | Snapshot of all installed packages        |
+| `info`          | `packageName`                                                          | Is package X installed? At what version?  |
+| `add`           | `identifier` (e.g. `com.unity.xr.hands` or `com.unity.xr.hands@1.5.0`) | Install / switch version                  |
+| `remove`        | `packageName`                                                          | Uninstall                                 |
+| `update`        | `packageName`, `version?` (explicit to change an installed package)    | Install missing / switch explicit version |
+| `list_samples`  | `packageName`, `version?`                                              | Samples declared by the package           |
+| `import_sample` | `packageName`, `sampleName`, `overwrite?`, `version?`                  | Copy a sample into Assets/Samples/…       |
 
 The underlying C# layer is **idempotent**:
 
@@ -66,16 +64,25 @@ Every call returns a `PXR_MCP_Result`:
 ```
 
 When relaying outcomes to the user, echo the `summary`. When the status is
-`skipped`, echo the `warning` and propose the obvious fix (usually:
-install the missing package, then retry the sample import).
+`skipped`, echo the `warning` and classify it by action and workflow context:
+
+- An `info` pre-check inside an explicit install / "ensure installed" request
+  may continue to `add` under §4.1. The same result from a read-only query means
+  "not installed" and MUST NOT trigger a write.
+- An `import_sample` whose warning says its package is not installed is
+  **transitional** only when the user requested that import or the current
+  building-block flow already authorized dependency resolution. Follow
+  §4.2/§4.3 (auto-install + settle loop + one retry).
+- For any other `skipped`, propose the obvious fix and ask the user to confirm.
 
 ## 3. Mandatory workflow: domain-reload-safe writes
 
-Mutating operations (`add`, `remove`, `update`, `import_sample`) trigger a
-Unity Editor recompile / domain reload. **After every mutating call** you
-MUST run the **post-write settle loop** before invoking any other PICO MCP
-tool — otherwise the next tool call may fail because the MCP bridge is
-temporarily down during the reload.
+Successful mutations from `add`, `remove`, `update`, and `import_sample`
+trigger a Unity Editor recompile / domain reload. **After any of these calls
+returns `status=ok`**, run the **post-write settle loop** before invoking any
+other PICO MCP tool — otherwise the next tool call may fail because the MCP
+bridge is temporarily down during the reload. `status=already_present` is a
+no-op and does not need a settle loop.
 
 ### Post-write settle loop
 
@@ -149,7 +156,11 @@ MCP client.
      - status=already_present  → relay summary, proceed directly to step 2 (no settle needed).
      - status=ok               → run post-write settle loop, then proceed to step 2.
 2. call pico_xr_package(action=import_sample, packageName=P, sampleName=S)
-     - Apply step 4.2 rules to the result.
+     - status=already_present → relay summary, STOP.
+     - status=ok              → run post-write settle loop, then relay summary.
+     - status=skipped         → this is the one retry; relay summary + warning,
+                                STOP and ask the user. Do NOT fall back to 4.3 again.
+     - status=error           → relay summary + error, STOP and ask user.
 ```
 
 ### 4.4 Query
@@ -168,6 +179,34 @@ MCP client.
       render `data.samples` (displayName + imported flag) as a table.
 ```
 
+### 4.5 Update or repair a package
+
+```
+1. For a registry package, call:
+     pico_xr_package(action=update, packageName=P, version=V?)
+     - To change an installed package, provide an explicit target `version`.
+       Omitting `version` can install a missing package at the registry default,
+       but an installed package may return `already_present`; that result does
+       not prove it is the latest version.
+     - status=already_present → relay summary, STOP (no settle needed).
+     - status=ok              → run post-write settle loop, then relay summary.
+     - status=skipped         → relay summary + warning, STOP and ask user.
+     - status=error           → relay summary + error, STOP and ask user.
+
+2. For an installed Git dependency:
+     - Do not re-add the same moving Git URL (for example, the same `#main`
+       or `#develop` reference). The idempotent `add` path returns
+       `status=already_present`; it is a no-op and does not refresh
+       `Packages/packages-lock.json`.
+     - If the user supplied a different immutable tag or commit, call
+       pico_xr_package(action=add, identifier=<new Git URL>) and apply the
+       normal result handling above.
+     - If the user only supplied the same moving Git URL, explain that the
+       current MCP surface has no explicit refresh operation and stop. Do not
+       remove the package, hand-edit `Packages/manifest.json` or
+       `Packages/packages-lock.json`, or claim that the lock was refreshed.
+```
+
 ## 5. Identifier hints
 
 - Package names use reverse-DNS (e.g. `com.unity.xr.interaction.toolkit`).
@@ -176,6 +215,9 @@ MCP client.
   underlying `Client.Add` handles them. Pass them as `identifier` unchanged —
   the C# layer's `SplitIdentifier` recognises `git@` prefixes and won't
   mistake them for `name@version`.
+- Prefer an immutable tag or commit when changing an installed Git dependency.
+  A moving branch reference such as `#main` is not a refresh instruction, and
+  re-adding the same URL is an idempotent no-op under this tool contract.
 - Common reverse-DNS names for PICO workflows:
   - `com.unity.xr.interaction.toolkit` — XRI
   - `com.unity.xr.hands` — XR Hands
@@ -190,8 +232,18 @@ MCP client.
 | ----------------- | ------------------------------------------------------------------------------- |
 | `ok`              | Echo `summary`. If `data.previousVersion != null`, mention the upgrade.         |
 | `already_present` | Echo `summary` and explicitly say "no change made; existing state kept".        |
-| `skipped`         | Echo `summary` + `warning`. Propose the obvious fix and ask user to confirm.    |
+| `skipped`         | Echo `summary` + `warning`, then apply the typed rules below.                   |
 | `error`           | Echo `summary` + `error`. Suggest checking Unity Console; do NOT retry blindly. |
+
+Typed `skipped` rules:
+
+- `info` in a read-only query means "not installed"; report it without writing.
+- `info` in an explicit install / ensure flow may continue to `add` under §4.1.
+- `import_sample` with a missing-package warning in an already-authorized import
+  or building-block dependency flow is **transitional**: follow §4.2/§4.3
+  (auto-install + settle loop + one retry).
+- Any other `skipped`, or a second consecutive `skipped` after that retry, must
+  stop and ask the user.
 
 ## 7. Anti-patterns (DO NOT)
 
@@ -206,12 +258,16 @@ MCP client.
   through `pico_xr_package`.
 - DO NOT hard-code package versions in your replies unless the user asks. Let
   the registry resolve "latest" when `version` is omitted.
-- DO NOT treat `status=skipped` as a hard failure. It's an actionable warning.
-  A `skipped` from a not-yet-installed package/sample is transitional: follow
-  the §4.2/§4.3 auto-install-then-retry flow (settle loop + one retry) instead
-  of stopping. This mirrors the transitional-`skipped` exception in
-  pico-unity-buildingblocks (`SKILL.md` §8 / `references/orchestration.md`
-  step C); keep the two skills consistent — stop-and-ask only applies to
+- DO NOT classify `status=skipped` from its warning text alone. It is
+  transitional only for the typed §2/§6 install or import contexts; follow the
+  §4.1-§4.3 flow (settle loop + one retry) there. This mirrors the
+  transitional-`skipped` exception in
+  pico-unity-buildingblocks (`SKILL.md` §8 /
+  `pico-unity-buildingblocks/references/orchestration.md` step C); keep the two
+  skills consistent — stop-and-ask only applies to
   non-transitional `skipped` or a second consecutive `skipped` after the retry.
 - DO NOT loop a failed `add` more than once without changing parameters; relay
   the error to the user and let them decide.
+- DO NOT present the same moving Git URL as a package repair. An
+  `already_present` result means no change was made; wait for an explicit
+  refresh operation or use a user-supplied different immutable tag or commit.
