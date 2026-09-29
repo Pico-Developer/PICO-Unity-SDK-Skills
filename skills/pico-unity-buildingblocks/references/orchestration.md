@@ -43,7 +43,7 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
          PICO-NATIVE ONLY: there is no plane-detection OpenXR feature, so plane
          detection does NOT run on the PICO OpenXR runtime. BEFORE resolving
          deps, check r.data.runtime from the step-A snapshot: if it is "openxr",
-         STOP — do NOT enable VST, do NOT call pico_xr_plane(enable). Tell the
+         STOP — do NOT enable VST, do NOT call pico_xr_plane(action=enable). Tell the
          user plane detection is unsupported on PICO OpenXR and guide them to
          switch to the PICO-native loader (SKILL.md §3.1). (If the agent still
          calls enable on OpenXR, the C# layer returns `error` with the same
@@ -138,8 +138,9 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           Whether a hand or controller is visible — and that a visible
           controller uses the PICO prefab — is owned by the input blocks
           (`pico_xr_controller` / `pico_xr_hand`), NOT by grab. So a full
-          "controller grab" flow is `pico_xr_controller(enable)` + `pico_xr_grab(enable)`;
-          a "hand grab" flow is `pico_xr_hand(enable)` + `pico_xr_grab(enable)`.
+          "controller grab" flow is `pico_xr_controller(action=enable)` +
+          `pico_xr_grab(action=enable)`; a "hand grab" flow is
+          `pico_xr_hand(action=enable)` + `pico_xr_grab(action=enable)`.
           `enable` only guarantees a scene XRInteractionManager exists (creating
           an agent-owned host only if none exists) and drops the grab marker.
           Because the broker alone makes nothing grabbable, an
@@ -159,15 +160,20 @@ C. Perform the action
    Interpret result by `status`:
      - ok               → relay summary
      - already_present  → relay summary + "no change made"
-     - skipped          → relay summary + warning, ask user how to proceed
-                          EXCEPTION: a TRANSITIONAL skipped from a first-enable
-                          two-phase step (Plane/Hand §B.2 — `detail` mentions
-                          recompiling) or a dependency auto-install
-                          (package/sample not yet installed) is NOT a stop.
-                          Run one bounded settle loop (or the auto-install
-                          fallback) and retry the SAME action ONCE. Only if it
-                          is still skipped after that one retry do you fall back
-                          to "ask user how to proceed".
+     - skipped          → classify by action + workflow context:
+                          TRANSITIONAL first-enable: the first
+                          `pico_xr_plane(action=enable)` /
+                          `pico_xr_hand(action=enable)` returns
+                          `detail`/`warning` saying its documented driver/sample
+                          import is recompiling. Run one bounded settle loop and
+                          retry the SAME action ONCE.
+                          TRANSITIONAL dependency: a package/sample is missing
+                          while resolving dependencies for the current, already-
+                          authorized enable/configure action. Follow the package-
+                          manager §4.1-§4.3 fallback and its settle boundary.
+                          A read-only package query is NOT an install permission.
+                          For every other skipped, or if the one retry is still
+                          skipped, relay the warning and ask how to proceed.
      - error            → relay summary + error, ask user how to proceed
 
    Side effects worth knowing (no extra step needed — handled by the C# layer):
