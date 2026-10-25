@@ -5,14 +5,16 @@ the domain-reload settle loop.
 
 ## Full orchestration loop
 
-For ANY request "enable / configure / disable / query block B":
+For ANY requested block lifecycle action (enable / attach / configure / disable /
+remove / query):
 
 ```
 A. Snapshot
    r = call pico_xr_status()
    - If r.status != "ok": STOP and relay r.error.
 
-B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS):
+B. For ENABLE / ATTACH / CONFIGURE actions, resolve dependencies (skip for
+   DISABLE / REMOVE / STATUS):
 
    B.1 XR Origin dependency
        If r.data.xr_origin is missing (none of the four blocks shows an origin):
@@ -36,6 +38,17 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
          If r.data.vst.installed == false → first enable VST:
            call pico_xr_vst(action=enable)
            (no settle needed — VST does not trigger compile)
+         Spatial Mesh is TWO-PHASE on first enable because its bundled
+         `SpatialMeshManager.cs` must compile before it can be mounted:
+           Phase 1: pico_xr_spatial_mesh(action=enable) copies the driver and
+             visual assets into `Assets/PICO_MCP/SpatialMesh`. The call returns
+             `status=skipped`, `data.recompiling=true`, and a warning that names
+             the imported SpatialMeshManager assets.
+           → record transition `spatial_mesh:SpatialMeshManager`, run the
+             post-write settle loop, then retry the same enable once.
+           Phase 2: the loaded driver is mounted and configured; enable returns
+             `status=ok`. If the same transition is returned again after settle,
+             STOP because the workflow made no progress.
        If block is `plane`:
          (Plane Detection is the SensePack sibling of Spatial Mesh and shares
           the same VST dependency AND the same bundled-asset / two-phase
@@ -65,6 +78,7 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
              `status=skipped` with `detail` mentioning recompiling.
            → run the post-write settle loop (poll pico_xr_status until the
              bridge returns) — SAME loop as a package install.
+           → record transition `plane:PlaneDetectionManager`.
            Phase 2: call pico_xr_plane(action=enable) AGAIN; now
              PlaneDetectionManager is compiled/loaded, so it mounts + configures
              and returns `status=ok`.
@@ -73,16 +87,51 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           PICO SDK already in the project. The C# layer will report
           `error` with a clear message if the prefabs are missing; relay it
           verbatim and ask the user to install/update the PICO SDK.)
+       If block is `haptics`:
+         PICO-NATIVE ONLY for `attach` / `upsert_effect`: check r.data.runtime
+         before either action. If it is not `native`, STOP and explain that this
+         block uses the current PICO-native `PXR_Input.SendHapticImpulse`,
+         `PXR_Input.SendHapticBuffer`, and buffer-lifecycle APIs; do not
+         substitute Unity XR, OpenXR, deprecated `StartVibrateBy*` or Haptic
+         Stream APIs, `PXR_Plugin` internals, or parametric haptics.
+         Ensure the agent XR Origin exists. Haptics does not create an XR Origin
+         and does not require Left/Right Controller GameObjects because PICO's
+         `VibrateType` directly selects the physical controller.
+         `pico_xr_haptics` attaches one `PXR_MCP_HapticsManager` to that origin
+         and manages multiple named effects. One effect has one type; `both` may
+         use different left/right parameters and assets. If each hand needs a
+         different type, configure two named effects. PCM remains code-only.
+         It MUST NOT invent, restrict, or register an XRI, collision, input, UI,
+         animation, or other gameplay trigger. If the user names a concrete
+         business event, locate that business code or UnityEvent and wire its
+         existing control flow to `Send`, `StartEffect`, `Pause`, `Resume`,
+         `UpdateEffect`, `Stop`, or a matching `Try*` method. If no trigger is named, stop after
+         the manager/effects are ready. No package import or domain reload is expected.
        If block is `hand`:
-         (No extra package install for the MODELS — PICO hand prefabs
-          (HandLeft/HandRight) ship with the PICO SDK already in the project, and
-          the PICO-native hand path needs no Unity XR Hands package. The C# layer
-          will report `error` with a clear message if the prefabs are missing;
-          relay it verbatim and ask the user to install/update the PICO SDK.
-          Enable also wires the mounted hands into the same
-          XRInputModalityManager the controller block uses, so a connected
-          controller natively auto-hides the hand models — no extra step and
-          no dependency to resolve here.
+         Branch model dependencies by r.data.runtime BEFORE calling enable:
+           If runtime is `native`:
+             No extra package install for the MODELS. PICO HandLeft/HandRight
+             prefabs ship with the PICO SDK. The C# layer reports `error` if
+             they are missing; relay it and ask the user to verify/update the
+             PICO SDK.
+           If runtime is `openxr`:
+             Ensure package `com.unity.xr.hands` with the package-manager §4.1
+             flow. Then list its samples and ensure `HandVisualizer` is
+             imported with §4.2/§4.3. Run the post-write settle loop after each
+             successful package/sample mutation. These prefabs are the OpenXR
+             hand MODELS; never prescribe PICO HandLeft/HandRight on this path.
+           If runtime is `none`:
+             STOP with the provider-missing guidance from SKILL.md §3.1.
+         For BOTH native and OpenXR runtimes, ensure the XRI
+         `Hands Interaction Demo` sample is imported before enable. Use the
+         package-manager §4.2/§4.3 flow and settle after a successful import.
+         Once those dependencies are ready, call hand enable. The tool still has
+         an idempotent on-demand import fallback, but normal orchestration must
+         not rely on it.
+         After the runtime-specific models are ready, enable also wires them
+          into the same XRInputModalityManager the controller block uses, so a
+          connected controller natively auto-hides the hand models — no extra
+          step and no dependency to resolve here.
           Enable also flips the OpenXR `HandTracking` + `HandInteractionProfile`
           features on (Android target, reflection, mirrors PICO SDK
           `PXR_Utils.EnableHandTrackingFeature()`) so a hand pinch surfaces as
@@ -98,9 +147,9 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           Starter-Assets controller does NOT resurface. A controller appears only
           when the user runs `pico_xr_controller` (which mounts the PICO prefab
           and re-binds those refs). So "add hand pick-up" alone yields hands only.
-          HAND INTERACTOR IS TWO-PHASE (defect ② + ③ fix): a hand pinch surfacing
+          HAND INTERACTOR FALLBACK IS TWO-PHASE (defect ② + ③ fix): a hand pinch surfacing
           as a select is only HALF of grab — something must RECEIVE that select.
-          The PICO hand models are visual/tracking only and carry no interactor,
+          The runtime-specific hand models are visual/tracking only and carry no interactor,
           so enable instantiates the XRI `Hands Interaction Demo` sample's
           `XR Origin Hands (XR Rig)` prefab (identified reflection-first by an
           XROrigin component + a `Camera Offset/Left Hand|Right Hand` structure,
@@ -112,12 +161,13 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           GameObjects INSIDE the rig prefab — they are NOT independent prefab
           assets, so any "scan the sample for a prefab named *left/right*"
           approach picks unrelated affordance leaves and never mounts anything
-          usable. Importing that sample copies assets and triggers an Editor
-          recompile, so the FIRST enable (when the sample is not yet present)
-          returns `status=skipped` with `detail` mentioning recompiling.
+          usable. If dependency pre-resolution was bypassed and enable must
+          import that sample itself, the call returns `status=skipped` with
+          `data.recompiling=true` and `detail` mentioning the sample.
             → run the post-write settle loop (poll pico_xr_status until the bridge
               returns) — SAME loop as a package install.
-            Then call pico_xr_hand(action=enable) AGAIN; now the sample is
+            Record transition `hand:Hands Interaction Demo`, then call
+            pico_xr_hand(action=enable) AGAIN; now the sample is
             present, so it mounts the interactors and returns `status=ok`. Once
             the sample is imported, enable is single-phase.
           FAR-RAY MUST FOLLOW THE HAND (defect ③ fix): the interactor group's
@@ -128,11 +178,24 @@ B. For ENABLE / CONFIGURE actions, resolve dependencies (skip for DISABLE/STATUS
           shoot from the head instead of the hand. Enable therefore re-wires the
           four references — `InteractionAttachController.transformToFollow`,
           both casters' `castOrigin`, and `CurveVisualController.lineOriginTransform`
-          — to the local `Aim Pose` after reparent (reflection, R3).)
+          — to the local `Aim Pose` after reparent (reflection, R3).
        If block is `grab`:
          (Grab reuses the SAME XRI dependency as XR Origin — the
           com.unity.xr.interaction.toolkit package + `Starter Assets` sample —
           so B.1 already covers it; there is no EXTRA package to install here.
+          INTERACTOR GATE (MANDATORY for a working Grab request): inspect the
+          initial status snapshot before calling `pico_xr_grab`. If neither
+          `r.data.controller.installed` nor `r.data.hand.installed` is true,
+          STOP before calling `pico_xr_grab` and ask the user to choose
+          "Controller Grab or Hand Grab?" Do not silently choose or enable an
+          input path. After the user chooses (or when the original request
+          already names controller/hand), enable that input block first, take a
+          fresh `pico_xr_status` snapshot, and continue only after the selected
+          input block reports installed. The only exception is an explicit
+          request to provision just the shared interaction broker or to attach
+          `XRGrabInteractable` for later setup; honor that narrower request, but
+          clearly report that the result is incomplete/inert and must not be
+          reported as working Grab.
           Grab is DECOUPLED from hand vs controller: it does NOT re-show the
           controller module and does NOT add interactors to controller nodes.
           Whether a hand or controller is visible — and that a visible
@@ -160,21 +223,35 @@ C. Perform the action
    Interpret result by `status`:
      - ok               → relay summary
      - already_present  → relay summary + "no change made"
-     - skipped          → classify by action + workflow context:
-                          TRANSITIONAL first-enable: the first
-                          `pico_xr_plane(action=enable)` /
-                          `pico_xr_hand(action=enable)` returns
-                          `detail`/`warning` saying its documented driver/sample
-                          import is recompiling. Run one bounded settle loop and
-                          retry the SAME action ONCE.
+     - skipped          → classify by action + runtime + workflow context:
+                          TRANSITIONAL first-enable: Spatial Mesh, Plane, or Hand
+                          enable returns `data.recompiling=true`, and its
+                          `detail`/`warning` identifies a documented driver/sample
+                          import. Record a transition key of block + imported
+                          driver/sample, run one bounded settle loop, then retry
+                          the SAME action. Allow each distinct transition once.
+                          OpenXR Hand can advance through `HandVisualizer` and
+                          `Hands Interaction Demo` as separate transitions when
+                          its dependencies were not pre-resolved.
                           TRANSITIONAL dependency: a package/sample is missing
                           while resolving dependencies for the current, already-
                           authorized enable/configure action. Follow the package-
                           manager §4.1-§4.3 fallback and its settle boundary.
                           A read-only package query is NOT an install permission.
-                          For every other skipped, or if the one retry is still
-                          skipped, relay the warning and ask how to proceed.
+                          For every other skipped, or if the same transition is
+                          returned again after settle, relay the warning and ask
+                          how to proceed. A new skipped is not progress unless it
+                          names another documented transition for that block.
      - error            → relay summary + error, ask user how to proceed
+
+   The complete allowlist of first-enable transition keys is:
+     - `spatial_mesh:SpatialMeshManager`
+     - `plane:PlaneDetectionManager`
+     - `hand:HandVisualizer`
+     - `hand:Hands Interaction Demo`
+   Derive the key from the called tool plus the exact imported driver/sample
+   named in `detail`/`warning`; do not infer it from the generic `summary`. Any
+   other key is non-transitional and must stop.
 
    Side effects worth knowing (no extra step needed — handled by the C# layer):
      - The FIRST block that triggers EnsureXROrigin() mounts PXR_Manager on
@@ -198,6 +275,12 @@ C. Perform the action
        LOADER. If neither define is set, the block returns error/skipped saying
        the driver type never appeared → STOP and use the provider-missing
        guidance template in SKILL.md §3.1; do NOT auto-fix or retry.
+     - Controller Haptics is intentionally PICO-native. It uses the current
+       `PXR_Input.SendHapticImpulse`, AudioClip/PCM/PHF `SendHapticBuffer`
+       overloads, and `Start/Pause/Resume/Update/StopHapticBuffer` lifecycle.
+       OpenXR projects still compile, but attach/upsert actions report
+       unsupported there. Status and cleanup remain available after a project
+       changes runtime.
      - PLANE DETECTION IS PICO-NATIVE ONLY: it has no OpenXR feature and does
        NOT run on the PICO OpenXR runtime. When r.data.runtime == "openxr",
        plane enable returns `error` — STOP, relay it, and guide the user to the
@@ -222,7 +305,7 @@ D. Internal verification (NOT user-facing)
      table on every action. (Exception: pure status queries.)
 
 E. Save the scene
-   For ANY mutating action in step C (enable / disable / configure that
+   For ANY mutating action in step C (enable / attach / disable / remove / configure that
    actually changed scene state), invoke the host's built-in Save Scene
    capability (NOT a PICO MCP tool — Unity MCP already exposes Save Scene
    for the active scene). This persists the XR Origin + block edits so the
@@ -235,10 +318,23 @@ E. Save the scene
 
 ## Domain-reload settle loop
 
-Every time a `pico_xr_package` mutating action returns `status=ok`, you MUST
-wait for the Unity Editor to finish recompiling before issuing the next MCP
-call. Otherwise the bridge will be momentarily offline and your next call
-will fail.
+Enter this loop only when the result crosses the authoritative reload boundary
+in SKILL.md §4.1:
+
+- a `pico_xr_package` `add` / `remove` / `update` / `import_sample` returns
+  `status=ok`; or
+- Spatial Mesh / Plane / Hand `enable` returns `status=skipped`,
+  `data.recompiling=true`, and identifies one of the documented first-enable
+  import transitions.
+
+Do not infer a reload from `enable`, `configure`, or `disable` alone. VST,
+Controller, Locomotion, and Grab do not reload for those actions, and a normal
+`status=ok` feature result proceeds directly to internal verification. Waiting
+there adds latency and contradicts the feature-specific workflow.
+
+When the result does cross the boundary, wait for the Unity Editor to finish
+recompiling before issuing the next MCP call. Otherwise the bridge will be
+momentarily offline and the next call can fail.
 
 ```
 poll_pico_xr_status_until_ready(max_retries=10, interval_seconds=3):

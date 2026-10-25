@@ -1,6 +1,6 @@
 ---
 name: spatialadapter-spatial-camera-focus
-description: Use when a Spatial Adapter, PICO Spatial, or Unity Spatial scene should keep a target inside SpatialCamera bounds or follow it with SpatialCamera.
+description: Use for SpatialCamera target following or keeping a moving target visible inside SpatialCamera bounds in Spatial Adapter. Scene camera presence and window configuration belong to their topic skills. Platform names alone do not activate this skill.
 license: 'Apache-2.0'
 ---
 
@@ -16,11 +16,11 @@ Confirm Spatial mode from the saved `mode`, installed package, and scene evidenc
 
 ## Trigger Keywords
 
-- `Spatial Adapter`
-- `PICO Spatial`
-- `Unity Spatial`
-- `SpatialCamera`
+- follow a target with SpatialCamera
+- keep a moving object inside SpatialCamera bounds
 - `SpatialCameraBoundsFollower`
+
+Platform names alone do not activate this skill. Require target-following or camera-bounds intent. Use [spatialadapter-scene-setup](../spatialadapter-scene-setup/SKILL.md) for camera presence and [spatialadapter-camera-window-api](../spatialadapter-camera-window-api/SKILL.md) for window configuration. If only `SpatialCamera` is mentioned, clarify the intended action.
 
 ## When to Use
 

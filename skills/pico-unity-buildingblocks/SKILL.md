@@ -2,14 +2,14 @@
 name: pico-unity-buildingblocks
 description: >-
   Orchestrate PICO XR building blocks (XR Origin, VST/Passthrough, Controller
-  models, Locomotion, Spatial Mesh, Hand tracking, Grab & drag, and future
+  models, Controller Haptics, Locomotion, Spatial Mesh, Hand tracking, Grab & drag, and future
   blocks) in a Unity Editor via the `pico_xr_*` MCP tools. Handles MCP
   pre-check, dependency resolution (auto-installing packages, importing
   samples), domain-reload waits, enable/disable/configure actions, and scene
   saving.
 
   Trigger when the user wants to enable / disable / configure / query any
-  PICO XR feature — passthrough, controllers, locomotion, spatial mesh, hand
+  PICO XR feature — passthrough, controllers, controller vibration / haptics, locomotion, spatial mesh, hand
   tracking / virtual hands / XR Hands / xr-hands / xrhands, object grab & drag
   / pick-up / grabbable, etc. — or create an
   XR Origin / XR rig.
@@ -21,7 +21,7 @@ license: 'Apache-2.0'
 ## Prerequisites
 
 - Unity Editor running with PICO MCP Extensions installed.
-- The 9 `pico_xr_*` tools (`pico_xr_vst`, `pico_xr_controller`,
+- The 10 `pico_xr_*` tools (`pico_xr_vst`, `pico_xr_controller`, `pico_xr_haptics`,
   `pico_xr_locomotion`, `pico_xr_spatial_mesh`, `pico_xr_plane`, `pico_xr_hand`,
   `pico_xr_grab`, `pico_xr_package`, `pico_xr_status`) are enabled in `Edit > Project Settings > AI > Unity MCP`.
 - The AI client is connected to the Unity MCP bridge.
@@ -39,22 +39,26 @@ Management` (Android tab).** These blocks run on EITHER PICO runtime —
 
 ## 1. What this skill orchestrates
 
-Eight PICO XR feature blocks exposed as MCP tools:
+Nine PICO XR feature blocks exposed as MCP tools:
 
-| Block        | Tool                   | Actions                                            |
-| ------------ | ---------------------- | -------------------------------------------------- |
-| VST          | `pico_xr_vst`          | `enable` / `disable` / `status`                    |
-| Controller   | `pico_xr_controller`   | `enable` / `disable` / `status`                    |
-| Locomotion   | `pico_xr_locomotion`   | `enable` / `disable` / `configure` / `status`      |
-| Spatial Mesh | `pico_xr_spatial_mesh` | `enable` / `disable` / `status`                    |
-| Plane        | `pico_xr_plane`        | `enable` / `disable` / `status`                    |
-| Hand         | `pico_xr_hand`         | `enable` / `disable` / `status`                    |
-| Grab         | `pico_xr_grab`         | `enable` / `disable` / `status` / `make_grabbable` |
-| Aggregate    | `pico_xr_status`       | (no params) snapshot of all seven blocks           |
+| Block        | Tool                   | Actions                                                            |
+| ------------ | ---------------------- | ------------------------------------------------------------------ |
+| VST          | `pico_xr_vst`          | `enable` / `disable` / `status`                                    |
+| Controller   | `pico_xr_controller`   | `enable` / `disable` / `status`                                    |
+| Haptics      | `pico_xr_haptics`      | `attach` / `upsert_effect` / `remove_effect` / `remove` / `status` |
+| Locomotion   | `pico_xr_locomotion`   | `enable` / `disable` / `configure` / `status`                      |
+| Spatial Mesh | `pico_xr_spatial_mesh` | `enable` / `disable` / `status`                                    |
+| Plane        | `pico_xr_plane`        | `enable` / `disable` / `status`                                    |
+| Hand         | `pico_xr_hand`         | `enable` / `disable` / `status`                                    |
+| Grab         | `pico_xr_grab`         | `enable` / `disable` / `status` / `make_grabbable`                 |
+| Aggregate    | `pico_xr_status`       | (no params) snapshot of all eight blocks                           |
 
-All blocks share the same XR Origin in the scene. This skill ensures the
-**XR Origin and its package/sample dependencies are in place** before any
-block-level action runs, then performs the action, then reports back.
+All blocks share the same XR Origin in the scene. For `enable` / `configure`
+only, this skill ensures the **XR Origin and its required package/sample
+dependencies are in place** before running the block action. `status` / `disable`
+skip dependency resolution: they never install packages, import samples, or
+create an XR Origin or other scene objects; they perform only the requested
+query or disable action.
 
 > **Single-active-camera invariant.** The agent XR Origin ships its own Main
 > Camera. To avoid a multi-camera render conflict (which notably breaks VST
@@ -69,31 +73,49 @@ block-level action runs, then performs the action, then reports back.
 
 ## 2. Step 0 — MCP connection pre-check (MANDATORY)
 
-Before ANY `pico_xr_*` call, verify that the AI IDE/CLI actually sees the
-Unity MCP tools:
+Before ANY `pico_xr_*` call, verify that the AI IDE/CLI sees every tool needed
+by the current workflow. Do not treat one visible `pico_xr_*` tool as proof
+that the registry is complete.
 
 ```
-1. In your own tool registry, list MCP tools whose name starts with `pico_xr_`.
-2. If you find ≥ 1 such tool → continue with Step 1.
-3. If you find 0 → STOP and reply to the user with the warning below; do NOT
-   proceed and do NOT attempt to call any tool.
+1. Resolve the requested action and every feature block it directly names.
+2. Initial read-only gate:
+     required_tools = {pico_xr_status} + every directly called feature tool
+   For a composite grab workflow, this includes pico_xr_grab plus the requested
+   pico_xr_controller or pico_xr_hand input tool.
+3. Compute missing_tools = required_tools - visible_tools.
+   If missing_tools is not empty, STOP and use the warning below. Do not call
+   any PICO MCP tool.
+4. Run the step-A pico_xr_status snapshot. For ENABLE / CONFIGURE, expand
+   required_tools before the first mutation:
+     - add pico_xr_package when the snapshot shows that XR Origin package/sample
+       dependency work is required;
+     - add pico_xr_vst when Spatial Mesh / Plane must enable VST first;
+     - retain every feature tool used by a composite workflow.
+5. Recompute missing_tools. If it is not empty, STOP before mutation and use
+   the warning below. Never execute the available prefix of a partial workflow.
 ```
+
+`status` / `disable` skip dependency resolution, so they require only
+`pico_xr_status` plus the directly called feature tools. The package manager has
+its own read-versus-write tool-set rules; apply them whenever this workflow
+delegates dependency work.
 
 ### Warning template (verbatim, adjust language to the user)
 
 > ⚠ **Unity MCP connection issue**
 >
-> I cannot find the PICO XR MCP tools (`pico_xr_vst`, `pico_xr_controller`,
-> `pico_xr_locomotion`, `pico_xr_spatial_mesh`, `pico_xr_plane`, `pico_xr_hand`,
-> `pico_xr_grab`, `pico_xr_package`, `pico_xr_status`) in my MCP tool list. The Unity MCP bridge is either not
-> running or the PICO MCP Extensions are not exposed.
+> I cannot complete this workflow because these required PICO XR MCP tools are
+> missing from my tool list: `<missing_tools>`. No mutation was attempted. The
+> Unity MCP bridge may be disconnected, or part of the PICO MCP Extensions tool
+> set may not be exposed.
 >
 > Please:
 >
 > 1. Confirm the **Unity Editor** is running and the project is open.
 > 2. Open **Edit > Project Settings > AI > Unity MCP** and confirm the
 >    bridge status is **Running**.
-> 3. In the **Tools** list, confirm the 9 `pico_xr_*` tools are listed and
+> 3. In the **Tools** list, confirm the 10 `pico_xr_*` tools are listed and
 >    enabled.
 > 4. **Restart this AI client** so it re-discovers the MCP tools.
 >
@@ -106,16 +128,17 @@ Unity MCP tools:
 
 The blocks have these prerequisites. Resolve from the **outside in**:
 
-| Block            | Requires                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **XR Origin**    | Package `com.unity.xr.interaction.toolkit` + Sample `Starter Assets`                                                                                                                                                                                                                                                                                                                                                                              |
-| **VST**          | XR Origin present + a PICO runtime enabled (§3.1). On the OpenXR path the C# layer auto-enables the `PassthroughFeature` OpenXR feature.                                                                                                                                                                                                                                                                                                          |
-| **Controller**   | XR Origin present + PICO controller-model prefabs in PICO SDK                                                                                                                                                                                                                                                                                                                                                                                     |
-| **Locomotion**   | XR Origin present (Locomotion node is a child of XR Origin)                                                                                                                                                                                                                                                                                                                                                                                       |
-| **Spatial Mesh** | XR Origin present + **VST enabled** (passthrough required by PICO) + a PICO runtime enabled (§3.1). On the OpenXR path the C# layer auto-enables the `PICOSpatialMesh` OpenXR feature and reads the mesh from the OpenXR subsystem.                                                                                                                                                                                                               |
-| **Plane**        | XR Origin present + **VST enabled** (passthrough required by PICO) + the **PICO-native** runtime enabled (§3.1). **PICO-native ONLY** — there is no plane-detection OpenXR feature, so on the PICO OpenXR runtime `pico_xr_plane(action=enable)` returns `error`; STOP and guide the user to the PICO-native loader.                                                                                                                              |
-| **Hand**         | XR Origin present + PICO hand prefabs (HandLeft/HandRight) in PICO SDK. Enable also imports the XRI `Hands Interaction Demo` sample to mount a hand INTERACTOR rig (so a pinch can actually grab) — **two-phase on first enable** (sample import → recompile → settle loop → enable again), and flips OpenXR HandTracking + HandInteractionProfile (pinch→select) when the OpenXR SDK is present. Hand-only enable does NOT surface a controller. |
-| **Grab**         | XR Origin present + XRI package + `Starter Assets` sample (interaction broker + interactable). Decoupled from hand/controller — needs an enabled input block (`pico_xr_controller` / `pico_xr_hand`) to supply the interactor. `make_grabbable` needs XRI only.                                                                                                                                                                                   |
+| Block            | Requires                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **XR Origin**    | Package `com.unity.xr.interaction.toolkit` + Sample `Starter Assets`                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| **VST**          | XR Origin present + a PICO runtime enabled (§3.1). On the OpenXR path the C# layer auto-enables the `PassthroughFeature` OpenXR feature.                                                                                                                                                                                                                                                                                                                                                                                                     |
+| **Controller**   | XR Origin present + PICO controller-model prefabs in PICO SDK                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| **Haptics**      | Existing agent XR Origin + **PICO-native runtime**. It attaches one manager with multiple named impulse/AudioClip/PHF effects; controller GameObjects are not required, and gameplay code or a user-selected UnityEvent decides when an effect runs.                                                                                                                                                                                                                                                                                         |
+| **Locomotion**   | XR Origin present (Locomotion node is a child of XR Origin)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| **Spatial Mesh** | XR Origin present + **VST enabled** (passthrough required by PICO) + a PICO runtime enabled (§3.1). On the OpenXR path the C# layer auto-enables the `PICOSpatialMesh` OpenXR feature and reads the mesh from the OpenXR subsystem.                                                                                                                                                                                                                                                                                                          |
+| **Plane**        | XR Origin present + **VST enabled** (passthrough required by PICO) + the **PICO-native** runtime enabled (§3.1). **PICO-native ONLY** — there is no plane-detection OpenXR feature, so on the PICO OpenXR runtime `pico_xr_plane(action=enable)` returns `error`; STOP and guide the user to the PICO-native loader.                                                                                                                                                                                                                         |
+| **Hand**         | XR Origin present + runtime-specific models: **PICO-native** uses PICO SDK `HandLeft` / `HandRight`; **OpenXR** requires package `com.unity.xr.hands` + sample `HandVisualizer`. Both paths also require the XRI `Hands Interaction Demo` sample for the hand-interactor rig. Resolve these dependencies before `enable`; every new package/sample import has its own settle boundary. The C# layer flips OpenXR HandTracking + HandInteractionProfile (pinch→select) when OpenXR is active. Hand-only enable does NOT surface a controller. |
+| **Grab**         | XR Origin present + XRI package + `Starter Assets` sample (interaction broker + interactable). Decoupled from hand/controller — needs an enabled input block (`pico_xr_controller` / `pico_xr_hand`) to supply the interactor. `make_grabbable` needs XRI only.                                                                                                                                                                                                                                                                              |
 
 Implementation note: the `pico_xr_*` MCP tools themselves contain an
 `EnsureXROrigin` call internally, so they will not crash if XR Origin is
@@ -168,11 +191,11 @@ What is automatic vs. what the user must do:
 
 ## 4. The block-action orchestration loop (summary)
 
-For ANY request "enable / configure / disable / query block B":
+For any block lifecycle request (enable / attach / configure / disable / remove / query):
 
 ```
 A. Snapshot         — call pico_xr_status(); if not ok, STOP.
-B. Resolve deps     — for ENABLE/CONFIGURE only (skip for DISABLE/STATUS):
+B. Resolve deps     — for ENABLE/ATTACH/CONFIGURE only (skip for DISABLE/REMOVE/STATUS):
                       B.1 XR Origin (XRI package + Starter Assets sample)
                       B.2 Block-specific extras (e.g. Spatial Mesh needs VST)
 C. Perform action   — call pico_xr_<block>(action=<verb>, ...params)
@@ -184,19 +207,46 @@ E. Save scene       — host Save Scene tool (skip for status-only / no-change f
 [`references/orchestration.md`](references/orchestration.md).** Read it before
 performing any block action or when a domain reload occurs.
 
+### 4.1 Reload boundary (authoritative)
+
+Choose whether to settle from the MCP result, not merely from whether the
+requested action mutates state:
+
+| Result                                                                                                                                          | Settle before the next MCP call?                    |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Package `add` / `update` / `import_sample` succeeds                                                                                             | **Yes**                                             |
+| Package `remove` succeeds with `data.changed=true`                                                                                              | **Yes**                                             |
+| Package `remove` succeeds with `data.changed=false`                                                                                             | **No** — it was not installed; no change was made   |
+| Spatial Mesh / Plane / Hand `enable` returns `status=skipped`, `data.recompiling=true`, and names one of the four documented import transitions | **Yes**, once per distinct transition               |
+| The same first-enable transition repeats after its one settle/retry                                                                             | **No** — stop and report no progress                |
+| VST / Controller / Haptics / Locomotion / Grab non-reloading mutations                                                                          | **No**                                              |
+| Any feature mutation returns a normal result without a recompile transition                                                                     | **No** — continue directly to internal verification |
+| `status`, package `list` / `info` / `list_samples`, or `status=already_present`                                                                 | **No**                                              |
+
+The four allowed first-enable transitions are
+`spatial_mesh:SpatialMeshManager`, `plane:PlaneDetectionManager`,
+`hand:HandVisualizer`, and `hand:Hands Interaction Demo`. Do not insert a
+settle delay after every feature mutation: scene edits can be verified
+immediately unless the result explicitly reports one of these reloads.
+The `data.changed` field is the remove mutation signal carried through the
+Unity MCP transport. The Host-visible response may expose `success`, `message`,
+and `data` without the internal `status` field. Do not infer a reload from the
+`remove` verb, `success=true`, or internal `status=ok` alone.
+
 ## On-demand references
 
-| File                                | When to read                                                                |
-| ----------------------------------- | --------------------------------------------------------------------------- |
-| `references/orchestration.md`       | Before performing any block action; when a domain reload occurs             |
-| `references/blocks/xr-origin.md`    | When creating / setting up XR Origin                                        |
-| `references/blocks/vst.md`          | When enabling / disabling VST / passthrough                                 |
-| `references/blocks/controller.md`   | When adding / removing controller models                                    |
-| `references/blocks/locomotion.md`   | When enabling / configuring / disabling locomotion                          |
-| `references/blocks/spatial-mesh.md` | When enabling / disabling spatial mesh                                      |
-| `references/blocks/plane.md`        | When enabling / disabling plane detection                                   |
-| `references/blocks/hand.md`         | When enabling / disabling hand tracking / virtual hands                     |
-| `references/blocks/grab.md`         | When enabling / disabling object grab & drag, or making an object grabbable |
+| File                                | When to read                                                                       |
+| ----------------------------------- | ---------------------------------------------------------------------------------- |
+| `references/orchestration.md`       | Before performing any block action; when a domain reload occurs                    |
+| `references/blocks/xr-origin.md`    | When creating / setting up XR Origin                                               |
+| `references/blocks/vst.md`          | When enabling / disabling VST / passthrough                                        |
+| `references/blocks/controller.md`   | When adding / removing controller models                                           |
+| `references/blocks/haptics.md`      | When managing PICO-native named impulse, AudioClip, PHF, or code-level PCM haptics |
+| `references/blocks/locomotion.md`   | When enabling / configuring / disabling locomotion                                 |
+| `references/blocks/spatial-mesh.md` | When enabling / disabling spatial mesh                                             |
+| `references/blocks/plane.md`        | When enabling / disabling plane detection                                          |
+| `references/blocks/hand.md`         | When enabling / disabling hand tracking / virtual hands                            |
+| `references/blocks/grab.md`         | When enabling / disabling object grab & drag, or making an object grabbable        |
 
 ## 8. Reply style
 
@@ -213,26 +263,35 @@ performing any block action or when a domain reload occurs.
   host has no Save Scene tool).
 - If an action returns `error`, STOP, relay the error, suggest the obvious next
   step, and wait. Do NOT retry blindly.
-- If an action returns `skipped`, classify it by action and workflow context:
+- If an action returns `skipped`, classify it by action, runtime, and workflow context:
   - **Transitional first-enable recompile** — only
-    `pico_xr_plane(action=enable)` or `pico_xr_hand(action=enable)`, on the first
-    attempt, when `detail`/`warning` says the documented driver/sample import is
-    recompiling. Run ONE bounded post-write settle loop and retry the SAME
-    action ONCE.
+    `pico_xr_spatial_mesh(action=enable)`, `pico_xr_plane(action=enable)`, or
+    `pico_xr_hand(action=enable)`, when `data.recompiling == true` and
+    `detail`/`warning` identifies a documented driver/sample import. Track the
+    transition by block plus imported driver/sample and run ONE bounded
+    post-write settle loop before retrying the SAME action. Each distinct
+    transition may advance once; the same transition repeating means no progress
+    and must stop. OpenXR Hand may expose two distinct stages (`HandVisualizer`,
+    then `Hands Interaction Demo`) when dependencies were not pre-resolved. The
+    only valid transition keys are `spatial_mesh:SpatialMeshManager`,
+    `plane:PlaneDetectionManager`, `hand:HandVisualizer`, and
+    `hand:Hands Interaction Demo`; derive the key from the called tool plus the
+    exact imported asset/sample named in `detail`/`warning`, not from `summary`.
   - **Transitional dependency resolution** — only a package/sample dependency
     step within the current, already-authorized `enable` / `configure` flow.
     Follow the pico-unity-package-manager §4.1-§4.3 fallback, including its
     settle boundary and single retry. A read-only package query does not
     authorize an install.
-  - For every other `skipped`, and for a second consecutive `skipped` after the
-    one retry, STOP, relay the warning, suggest the next step, and wait.
+  - For every other `skipped`, and whenever the same transition is still
+    `skipped` after its one retry, STOP, relay the warning, suggest the next
+    step, and wait.
 
 ## 9. Anti-patterns (DO NOT)
 
 - DO NOT skip Step 0 (MCP pre-check). It costs nothing and saves the user
   a confusing failure trace.
-- DO NOT call `pico_xr_*` tools when Step 0 found 0 tools — there is
-  nothing to call.
+- DO NOT start a partial workflow when Step 0 reports any `missing_tools`.
+  Stop before mutation and report the exact missing tool names.
 - DO NOT chain a mutating `pico_xr_package` call directly with another
   `pico_xr_*` call without the settle loop. The Editor will be reloading.
 - DO NOT resolve dependencies for `disable` / `status` actions. They are

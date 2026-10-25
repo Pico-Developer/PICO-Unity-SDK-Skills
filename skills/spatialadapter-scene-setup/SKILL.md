@@ -1,6 +1,6 @@
 ---
 name: spatialadapter-scene-setup
-description: Use when setting up a Unity scene for Spatial Adapter, PICO Spatial, or Unity Spatial and the scene needs a SpatialCamera component.
+description: Use to inspect, create, or repair SpatialCamera presence in a Spatial Adapter scene, including a missing or duplicate scene camera. General project setup belongs to pico-unity-spatial; window configuration and target following belong to their topic skills. Platform names alone do not activate this skill.
 license: 'Apache-2.0'
 ---
 
@@ -16,19 +16,16 @@ Confirm Spatial mode from `.pico-cli/config.json` when available, installed pack
 
 ## Trigger Keywords
 
-- `Spatial Adapter`
-- `PICO Spatial`
-- `Unity Spatial`
-- `SpatialCamera`
-- `scene setup`
-- `setup Unity scene`
+- inspect scene SpatialCamera presence
+- add or create SpatialCamera
+- repair a missing or duplicate SpatialCamera
+
+Platform names alone do not activate this skill. Require a request to inspect, create, or repair the scene camera. Use [pico-unity-spatial](../pico-unity-spatial/SKILL.md) for general project setup, [spatialadapter-camera-window-api](../spatialadapter-camera-window-api/SKILL.md) for window configuration, and [spatialadapter-spatial-camera-focus](../spatialadapter-spatial-camera-focus/SKILL.md) for target following.
 
 ## When to Use
 
-- Use when a user asks to set up a Unity scene for Spatial Adapter.
-- Use when a user asks to set up a Unity scene for `PICO Spatial`.
-- Use when a user asks to set up a Unity scene for `Unity Spatial`.
-- Use when validating a new or imported scene before Spatial Adapter runtime testing.
+- Use when a user explicitly asks to inspect, add, or repair `SpatialCamera` in a scene.
+- Use when checking a new or imported scene for a missing or duplicate `SpatialCamera`.
 - Use when a scene is missing its `SpatialCamera` setup.
 - Do not use when the task is only to explain the `SpatialCamera` API without changing the scene.
 

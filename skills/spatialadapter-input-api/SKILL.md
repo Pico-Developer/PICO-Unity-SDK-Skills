@@ -1,6 +1,6 @@
 ---
 name: spatialadapter-input-api
-description: Use when working with Spatial Adapter, PICO Spatial, or Unity Spatial input, SpatialInputSupport, EnhancedTouch mapping, interaction IDs, or target colliders.
+description: Use for concrete Spatial Input implementation in Spatial Adapter, including target selection, click, tap, pinch, drag, manipulation, target colliders, EnhancedTouch mapping, SpatialInputSupport, SpatialInputDevice, and interaction IDs. Platform names alone do not activate this skill.
 license: 'Apache-2.0'
 ---
 
@@ -16,12 +16,14 @@ Confirm Spatial mode from the saved `mode`, installed package, and scene evidenc
 
 ## Trigger Keywords
 
-- `Spatial Adapter`
-- `PICO Spatial`
-- `Unity Spatial`
 - `SpatialInputSupport`
 - `Spatial Input`
 - `IndirectPinch`
+- target selection, click, tap, or pinch in Spatial Input
+- drag or manipulate objects with Spatial Input
+- Spatial Input target colliders and EnhancedTouch mapping
+
+Platform names alone do not activate this skill. Require a Spatial Input API or interaction task. Ordinary Unity input or collider work without a Spatial Adapter integration remains with generic Unity skills; backend `ColliderData` conversion belongs to [spatialadapter-components-api](../spatialadapter-components-api/SKILL.md).
 
 ## When to Use
 
@@ -29,6 +31,7 @@ Confirm Spatial mode from the saved `mode`, installed package, and scene evidenc
 - Use when reading or mutating `SpatialInputState`.
 - Use when mapping `touchId` values to Spatial Adapter interaction slots.
 - Use when routing interaction logic based on the currently hit `GameObject`.
+- Use when handling click, tap, pinch, or target-selection interactions through Spatial Input.
 - Use when deciding what collider an interactable GameObject should have for Spatial Input.
 - Use when a user wants to drag or manipulate GameObjects with Spatial Adapter input.
 - Use when debugging primary versus secondary spatial input device state.

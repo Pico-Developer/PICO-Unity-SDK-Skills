@@ -8,7 +8,7 @@ description: >-
   `pico_unity_init_completed` is `true`, skip initialization and report that it
   has already run; when the field is absent or not `true`, run the initialization
   once. Empty projects select and copy a PICOXR, OpenXR, or PICOSpatial template;
-  non-empty projects receive incremental package setup. Record the selected
+  valid existing Unity projects receive incremental package setup. Record the selected
   development `mode` as `picoxr`, `openxr`, or `picospatial`, prepare Android,
   open the project, and set the completion marker only after success.
 license: 'Apache-2.0'
@@ -33,8 +33,9 @@ PICO Unity project one-time initialization wizard. Run this skill only after the
 
 **Emptiness check first → branch handling**:
 
-- **Non-empty project** (Stage B): do not copy a template; directly **incrementally install the 3 packages** (AI Assistant / Unity MCP Extensions / PICO Unity SDK XR), skipping or upgrading based on existing dependency state.
+- **Valid existing Unity project** (Stage B): do not copy a template; directly **incrementally install the 3 packages** (AI Assistant / Unity MCP Extensions / PICO Unity SDK XR), skipping or upgrading based on existing dependency state.
 - **Empty project** (Stage C → D): preferentially sparse-clone the corresponding template subdirectory (`PICOSpatial` / `PICOXR` / `OpenXR`) from `Pico-Developer/PICO-Unity-Project-Templates` (GitHub) into `$PROJECT_ROOT`; fall back to `pico-cli project create` on failure. Then modify `productName` / `ProjectVersion.txt`, and install the 3 packages.
+- **Incomplete or invalid Unity project layout**: report every missing, wrong-type, or invalid core path and stop before collecting preferences or changing the project. Do not treat it as an empty project and do not attempt automatic repair.
 
 **Shared wrap-up**: both branches finally open the project with `unity open ... --build-target Android`, letting Unity switch the Active Build Target to Android during startup (equivalent to the official Editor launch argument `-buildTarget Android`) — no need to switch manually after opening, and no dependency on MCP tools.
 
@@ -44,15 +45,32 @@ PICO Unity project one-time initialization wizard. Run this skill only after the
 
 Before popping up any form, complete the following read-only probing (shared by all branches):
 
-1. **Emptiness check** (highest priority): check whether both `Assets/` directory **and** `Packages/manifest.json` are **missing at the same time**. Both missing → **empty project**; either present → **non-empty project**.
-2. **Additional reads for non-empty projects**: read `m_EditorVersion` from `$PROJECT_ROOT/ProjectSettings/ProjectVersion.txt` (used for the low-version gate in Stage B). Read `dependencies` from `$PROJECT_ROOT/Packages/manifest.json` (used in Stage B to determine the current versions of the 3 packages).
-3. **Check installed editors** (only needed for empty projects): run `unity editors --installed` to split candidate Unity 6+ LTS versions into "installed / not installed" groups. **For non-empty projects, if Stage B does not change the version, you may skip this step to save time.**
+1. **Classify the core Unity layout** (highest priority) using these three paths and expected types:
+
+   - `$PROJECT_ROOT/Assets/` must be a directory.
+   - `$PROJECT_ROOT/Packages/manifest.json` must be a regular file.
+   - `$PROJECT_ROOT/ProjectSettings/ProjectVersion.txt` must be a regular file.
+
+   Classify the project without changing it:
+
+   - All three core paths are missing → **empty project**. Continue to Stage C → D. Other files such as `.git/`, `.gitignore`, or `README.md` do not make the directory an existing Unity project.
+   - All three core paths have the expected types → **candidate existing Unity project**. Continue with the metadata validation below.
+   - Any other combination, including a core path that exists with the wrong type → **incomplete or invalid Unity project layout**. List every missing or wrong-type core path, then stop. Do not open the form, copy a template, modify any project file, install packages, open Unity, or write `pico_unity_init_completed`. Do not create the missing paths or otherwise attempt automatic repair.
+
+2. **Validate candidate project metadata** before classifying it as a valid existing Unity project:
+
+   - Parse `$PROJECT_ROOT/Packages/manifest.json`. It must be valid JSON with a top-level object and a `dependencies` object.
+   - Read `m_EditorVersion` from `$PROJECT_ROOT/ProjectSettings/ProjectVersion.txt`. It must be present and contain a recognizable Unity version with a numeric major version.
+   - If either validation fails, classify the project as an **incomplete or invalid Unity project layout**, report the exact file and reason, and stop with the same no-change guarantees as above. Do not overwrite malformed metadata or silently substitute defaults.
+
+3. **Additional reads for valid existing Unity projects**: retain the validated `m_EditorVersion` for the low-version gate in Stage B and the validated `dependencies` for the package checks in Stage B.
+4. **Check installed editors** (only needed for empty projects): run `unity editors --installed` to split candidate Unity 6+ LTS versions into "installed / not installed" groups. **For a valid existing Unity project, if Stage B does not change the version, you may skip this step to save time.**
 
 ---
 
-## Stage B — Non-empty project branch (runs first; goes straight to incremental installation)
+## Stage B — Valid existing Unity project branch (runs first; goes straight to incremental installation)
 
-**If Stage A determines the project is non-empty, do not take the empty-project branch; execute B.1 → B.6 in order.**
+**Enter Stage B only when Stage A confirms that all three core paths have the expected types and both metadata files pass validation. Do not enter this branch merely because one core path exists. Execute B.1 → B.6 in order.**
 
 ### B.1 Low-version gate
 
@@ -63,9 +81,9 @@ Before popping up any form, complete the following read-only probing (shared by 
   - Choose "No" → keep the current version as `unity_version`; the B.2 form no longer shows the version selection item.
   - Choose "Yes" → the B.2 form requires selecting a target Unity 6+ LTS version.
 
-### B.2 Minimal form collection (non-empty project)
+### B.2 Minimal form collection (valid existing Unity project)
 
-A non-empty project does not copy a template, but the config still requires one concrete development mode. Reuse a valid existing `mode`, or map a legacy `sdk` value (`picoxr` → `picoxr`, `openxr` → `openxr`, `spatial` → `picospatial`). If neither is available, collect `mode` in the form. The form **collects only necessary preferences**:
+A valid existing Unity project does not copy a template, but the config still requires one concrete development mode. Reuse a valid existing `mode`, or map a legacy `sdk` value (`picoxr` → `picoxr`, `openxr` → `openxr`, `spatial` → `picospatial`). If neither is available, collect `mode` in the form. The form **collects only necessary preferences**:
 
 | Field           | Control       | Options                           | When shown                                     |
 | --------------- | ------------- | --------------------------------- | ---------------------------------------------- |
@@ -78,41 +96,52 @@ A non-empty project does not copy a template, but the config still requires one 
 
 ### B.3 Incrementally install the 3 packages (core logic)
 
-Check the conditions below and write into the `dependencies` of `Packages/manifest.json`. **Preserve all of the developer's other existing dependencies; only make incremental additions/changes.**
+Complete the compatibility preflight without modifying `Packages/manifest.json`. Only after every blocking decision is resolved may you build the full dependency change and commit it once. **Preserve all of the developer's other existing dependencies; only make incremental additions/changes.**
 
 > **Why init writes the manifest directly (bounded exception):** `AGENTS.md` and `pico-unity-package-manager` forbid hand-editing `Packages/manifest.json` and require every package change to go through the `pico_xr_package` MCP tool. Initialization is the explicit exception: the Unity Editor is not open yet and the MCP bridge is not running, so `pico_xr_package` is unavailable — and MCP Extensions (which backs that bridge) is itself one of the packages installed here. Direct manifest writes are therefore limited to this bootstrap step. Once init finishes and the Editor/MCP bridge is up, all subsequent package changes must go through `pico_xr_package`.
 
-#### B.3.1 AI Assistant (`com.unity.ai.assistant`)
+#### B.3.1 Read-only compatibility preflight
 
-- **Not present** in `dependencies` → write `"com.unity.ai.assistant": "2.17.0-pre.1"`.
-- **Present but version is not 2.17.0-pre.1** in `dependencies` → upgrade to `"2.17.0-pre.1"` (treated as "not on the latest").
-- Already present and the version is already `2.17.0-pre.1` → **skip**.
+Use the validated dependency snapshot retained by Stage A to determine every package action before writing anything:
 
-#### B.3.2 Unity MCP Extensions (`com.bytedance.pico.mcp-extensions`)
+1. **AI Assistant (`com.unity.ai.assistant`)**:
+   - Not present → plan to add version `2.17.0-pre.1`.
+   - Present at another version → plan to upgrade to `2.17.0-pre.1`.
+   - Already at `2.17.0-pre.1` → plan no change.
+2. **Unity MCP Extensions (`com.bytedance.pico.mcp-extensions`)**:
+   - Not present → select the dependency address now: SSH by default; if the developer has not configured a GitHub SSH key, use HTTPS as described in Stage D.4. Plan to add that selected address.
+   - Already present and pointing to that repository → plan no change and preserve its existing address and ref.
+3. **PICO Unity SDK (XR)**: when `com.bytedance.pico.xr` is present, try to read its version from the git URL `#ref`, then from `Library/PackageCache/com.bytedance.pico.xr@*/package.json`.
+   - Not present → plan to add the three SDK dependencies listed in B.3.2.
+   - Version ≥ 6.0.0 → plan no change; preserve the existing addresses and refs.
+   - Version < 6.0.0 → ask: "The detected PICO Unity SDK (XR) version `xxx` is below 6.0.0. Upgrade to 6.0.0?"
+     - Choose "No" → exit initialization immediately. If the developer declines any blocking change, exit with the original manifest unchanged; do not write config or alter any other project file.
+     - Choose "Yes" → plan to replace all three SDK dependency keys with the values in B.3.2.
+   - Version cannot be determined → plan no change and report: "PICO SDK XR is present but its version is unknown; upgrade skipped. Initialization completes before any repair handoff. After initialization completes and the Unity Editor/MCP bridge are running, route an explicit refresh request to `pico-unity-package-manager`." Do not tell the developer to change the `#ref`, `Packages/manifest.json`, or `Packages/packages-lock.json` manually.
 
-- **Not present** in `dependencies` → write the following git dependency (SSH by default; if the developer has not configured an SSH key, switch to HTTPS — see the note in Stage D.4):
-  ```json
-  "com.bytedance.pico.mcp-extensions": "git@github.com:Pico-Developer/Unity-MCP-Extensions.git"
-  ```
-- Already present (pointing to that repo) → **skip** (keep the existing address and ref unchanged).
+This phase is read-only: do not write AI Assistant or MCP Extensions first and defer the SDK decision.
 
-#### B.3.3 PICO Unity SDK (XR) three git dependencies
+#### B.3.2 Build one complete dependency delta
 
-Check whether `com.bytedance.pico.xr` exists in `dependencies`:
+Build one complete dependency delta in memory from the original validated manifest and the resolved preflight decisions:
 
-- **Not present** → write the following **3 git dependencies together** into `dependencies`:
+- Set `com.unity.ai.assistant` to `2.17.0-pre.1` only when the preflight planned an add or upgrade.
+- Add `com.bytedance.pico.mcp-extensions` with the selected SSH or HTTPS address only when it is missing.
+- When the PICO SDK is missing or its confirmed upgrade was accepted, set these three keys together:
   ```json
   "com.bytedance.pico.spatialadapter": "https://github.com/Pico-Developer/PICO-Unity-SDK.git?path=/SpatialAdapter#main",
   "com.bytedance.pico.xr": "https://github.com/Pico-Developer/PICO-Unity-SDK.git?path=/XR#main",
   "com.plattar.unitygltf": "https://github.com/Pico-Developer/gltf-exporter.git?path=package/com.plattar.unitygltf#master"
   ```
-- **Already present**, try to read the version from the `#ref` in the git URL or from the cached package's `package.json`:
-  - Version **≥ 6.0.0** → **skip, do not update** (keep the developer's existing version, address, and ref).
-  - Version **< 6.0.0** → ask the developer "The detected PICO Unity SDK (XR) version `xxx` is below 6.0.0. Upgrade to 6.0.0?"
-    - Choose "No" → **exit the initialization flow immediately** (do not modify the manifest, do not write config).
-    - Choose "Yes" → overwrite the corresponding keys with the 3 git dependencies above (write all 3 keys together, even if only `com.bytedance.pico.xr` was originally present).
+- Leave every package whose preflight action was "no change" untouched, including its existing address or ref.
 
-> **Version-detection fallback**: when a git dependency (with `#ref` being a branch name such as `#main`) cannot yield a version number directly from the URL, try reading `version` from `Library/PackageCache/com.bytedance.pico.xr@*/package.json`; if there is no cache, treat it as "version cannot be determined" by default → the conservative approach is to **skip and not proactively upgrade**, only logging for the developer: "PICO SDK XR is present but its version is unknown; upgrade skipped. To force a refresh, manually change the `#ref`."
+> **Version-detection fallback**: when a git dependency (with `#ref` being a branch name such as `#main`) cannot yield a version number directly from the URL, try reading `version` from `Library/PackageCache/com.bytedance.pico.xr@*/package.json`; if there is no cache, treat it as "version cannot be determined" by default → the conservative approach is to **skip and not proactively upgrade**. Preserve the existing SDK address and ref, continue initialization, and report: "PICO SDK XR is present but its version is unknown; upgrade skipped. Initialization completes before any repair handoff. After initialization completes and the Unity Editor/MCP bridge are running, route an explicit refresh request to `pico-unity-package-manager`." Do not tell the developer to change the `#ref`, `Packages/manifest.json`, or `Packages/packages-lock.json` manually.
+
+If the resulting dependency object is identical to the original, skip the manifest write.
+
+#### B.3.3 Commit the manifest once
+
+Apply the resolved delta as one atomic manifest update: preserve the original top-level object, replace only its `dependencies` value with the in-memory result, write valid JSON to a temporary sibling file in `$PROJECT_ROOT/Packages/`, parse that staged file to validate it, then atomically replace the original manifest. If staging or validation fails, remove the temporary file, leave the original manifest unchanged, report the error, and stop. Re-read the committed manifest and verify all planned values before continuing to B.4.
 
 ### B.4 Sync `ProjectVersion.txt` (only when B.1 chose to change the version)
 
@@ -323,7 +352,7 @@ If any initialization step fails or the developer cancels/exits at an earlier ga
 
 Give the developer a brief report:
 
-- Project type (empty project / non-empty project);
+- Project type (empty / valid existing / incomplete or invalid Unity project layout);
 - For an empty project, the **template source**: "GitHub sparse-clone `PICOSpatial|PICOXR|OpenXR`" or "fallback `pico-cli project create --template ...`";
 - Unity version (if `ProjectVersion.txt` was rewritten, note the adjustment from `xxx` to the selected version);
 - Handling result of the 3 packages: AI Assistant (**newly installed / already present, skipped / upgraded to 2.17.0-pre.1**), MCP Extensions (**newly installed / already present, skipped**), PICO SDK XR (including gltf-exporter and SpatialAdapter, 3 git dependencies total) (**newly installed / ≥6.0.0 skipped / <6.0.0 upgrade-overwritten / version unknown, skipped**);
